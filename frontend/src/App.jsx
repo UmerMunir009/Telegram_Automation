@@ -6,6 +6,7 @@ import Add from './pages/Add';
 import List from './pages/List';
 import Order from './pages/Channel';
 import Nodes from './pages/Nodes';
+import Messages from './pages/Message';
 import Login from './components/Login';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -126,8 +127,9 @@ const App = () => {
                   } />
                   <Route path='/add' element={<Add token={token} />} />
                   <Route path='/list' element={<List token={token} />} />
-                  <Route path='/orders' element={<Order token={token} />} />
+                  <Route path='/join-groups' element={<Order token={token} />} />
                   <Route path='/nodes' element={<Nodes token={token} />} />
+                  <Route path='/message' element={<Messages token={token} />} />
                 </Routes>
               </div>
             </main>

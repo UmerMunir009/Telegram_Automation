@@ -1,6 +1,6 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { PlusCircle, LayoutGrid, ClipboardList, Settings, ShieldCheck, Zap, Globe } from 'lucide-react'
+import { PlusCircle, LayoutGrid, ClipboardList, Settings, ShieldCheck, Zap, Globe, MessageSquare } from 'lucide-react'
 
 const SideBar = () => {
   const navLinkClasses = ({ isActive }) => 
@@ -41,9 +41,15 @@ const SideBar = () => {
           <div className="absolute left-0 w-[2px] h-4 bg-blue-500 rounded-full opacity-0 group-[.active]:opacity-100 group-[.active]:shadow-[0_0_8px_#3b82f6] transition-all" />
         </NavLink>
 
-        <NavLink to='/orders' className={navLinkClasses}>
+        <NavLink to='/join-groups' className={navLinkClasses}>
           <ClipboardList size={20} strokeWidth={2} />
           <span className='text-sm font-medium tracking-wide '>Join Group/Channel</span>
+          <div className="absolute left-0 w-[2px] h-4 bg-blue-500 rounded-full opacity-0 group-[.active]:opacity-100 group-[.active]:shadow-[0_0_8px_#3b82f6] transition-all" />
+        </NavLink>
+
+        <NavLink to='/message' className={navLinkClasses}>
+          <MessageSquare size={20} strokeWidth={2} />
+          <span className='text-sm font-medium tracking-wide '>Send Message</span>
           <div className="absolute left-0 w-[2px] h-4 bg-blue-500 rounded-full opacity-0 group-[.active]:opacity-100 group-[.active]:shadow-[0_0_8px_#3b82f6] transition-all" />
         </NavLink>
 

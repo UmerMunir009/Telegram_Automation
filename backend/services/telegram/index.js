@@ -180,16 +180,16 @@ const verifyAccount = asyncErrorHandler(async (req, res) => {
         }
 
         if (msg.includes("PHONE_CODE_INVALID")) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "The OTP code entered is incorrect." 
+            return res.status(400).json({
+                success: false,
+                message: "The OTP code entered is incorrect."
             });
         }
 
         // Fallback
-        res.status(500).json({ 
-            success: false, 
-            message: error.message || "An unexpected error occurred." 
+        res.status(500).json({
+            success: false,
+            message: error.message || "An unexpected error occurred."
         });
     }
 });
@@ -328,8 +328,52 @@ const joinGroup = asyncErrorHandler(async (req, res) => {
 });
 
 
+
+const sendSingle = asyncErrorHandler(async (req, res) => {
+    const { targetHandle, message, senderId } = req.body;
+
+    const sender = await User.findOne({
+        where: { id: senderId, accountStatus: 'active' },
+        include: [{ model: Proxy, as: 'proxy' }]
+    });
+
+    if (!sender) {
+        return res.status(404).json({ success: false, message: "Sender session not active" });
+    }
+
+    let client;
+    try {
+        let proxyOptions = sender.proxy ? {
+            ip: sender.proxy.host,
+            port: parseInt(sender.proxy.port),
+            socksType: 5,
+            password: sender.proxy.password,
+            username: sender.proxy.username
+        } : null;
+
+        client = new TelegramClient(
+            new StringSession(sender.sessionString),
+            parseInt(process.env.TELEGRAM_API_ID),
+            process.env.TELEGRAM_API_HASH,
+            { connectionRetries: 1, proxy: proxyOptions }
+        );
+
+        await client.connect();
+        const entity = await client.getEntity(targetHandle);
+        await client.sendMessage(entity, { message });
+
+        await client.disconnect();
+        return res.status(STATUS_CODES.SUCCESS).json({ success: true, message: `Sent to ${targetHandle}` });
+
+    } catch (err) {
+        if (client) await client.disconnect();
+        return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ success: false, message: err.message });
+    }
+});
+
 module.exports = {
     loginAccount,
     joinGroup,
-    verifyAccount
+    verifyAccount,
+    sendSingle
 };
