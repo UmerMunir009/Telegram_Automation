@@ -5,7 +5,6 @@ const { STATUS_CODES } = require("../../config/constants");
 const asyncErrorHandler = require("../../utils/asyncErrorHandler");
 const { Api } = require("telegram");
 
-
 const activeClients = {};
 
 const loginAccount = asyncErrorHandler(async (req, res) => {
@@ -89,14 +88,46 @@ const loginAccount = asyncErrorHandler(async (req, res) => {
 });
 
 
-const verifyOtp = asyncErrorHandler(async (req, res) => {
-    const { phone, code, phoneCodeHash, password } = req.body;
+const finalizeUserSession = async (client, phone, name, proxyId, res, createdMessage) => {
+    const savedSession = client.session.save();
 
+    const [user, created] = await User.upsert({
+        phone: phone,
+        name: name,
+        sessionString: savedSession,
+        proxyId: proxyId || null,
+        accountStatus: 'active',
+        role: 'user'
+    });
+
+    try {
+        console.log(`Cleanup: Terminating session for ${phone}`);
+        if (client._updateLoop) client._updateLoop = false;
+        await client.disconnect();
+    } catch (e) {
+        console.log("Cleanup handled: Socket already closed.");
+    }
+
+    delete activeClients[phone];
+
+    return res.status(STATUS_CODES.SUCCESS).json({
+        success: true,
+        message: created ? "ACCOUNT_CREATED" : "ACCOUNT_UPDATED",
+        data: { id: user.id, name: user.name, phone: user.phone }
+    });
+};
+
+
+
+
+const verifyAccount = asyncErrorHandler(async (req, res) => {
+    const { phone, code, password } = req.body;
     const sessionData = activeClients[phone];
+
     if (!sessionData) {
         return res.status(STATUS_CODES.BAD_REQUEST).json({
             success: false,
-            message: "Session expired. Please request a new code."
+            message: "Session expired or not found. Please restart the process."
         });
     }
 
@@ -104,62 +135,66 @@ const verifyOtp = asyncErrorHandler(async (req, res) => {
 
     try {
         await client.start({
-            phoneNumber: phone,
+            phoneNumber: async () => phone,
             phoneCode: async () => code,
             password: async () => password,
-            phoneCodeHash: phoneCodeHash,
-            onError: (err) => console.error("Sign-in Error Callback:", err.message),
+            onError: (err) => { throw err; }
         });
 
-        console.log(`User ${phone} successfully authenticated`);
-
-        const savedSession = client.session.save();
-
-        const [user, created] = await User.upsert({
-            phone: phone,
-            name: name,
-            sessionString: savedSession,
-            proxyId: proxyId || null,
-            accountStatus: 'active',
-            role: 'user'
-        });
-
-        try {
-            console.log(`Cleanup: Terminating session for ${phone}`);
-            if (client._updateLoop) {
-                client._updateLoop = false;
-            }
-            await client.disconnect();
-            await client.destroy();
-
-        } catch (e) {
-            console.log("Cleanup handled: Socket was already closing.");
-        }
-
-        delete activeClients[phone];
-
-        res.status(STATUS_CODES.SUCCESS).json({
-            success: true,
-            message: created ? "ACCOUNT_CREATED" : "ACCOUNT_UPDATED",
-            data: { id: user.id, name: user.name, phone: user.phone }
-        });
+        console.log(`Success: Account ${phone} fully authorized.`);
+        return await finalizeUserSession(client, phone, name, proxyId, res);
 
     } catch (error) {
-        if (error.message.includes("SESSION_PASSWORD_NEEDED")) {
-            return res.status(STATUS_CODES.SUCCESS).json({
+        const msg = error.message.toUpperCase();
+        console.error(`Verification Logic Error: ${msg}`);
+
+        if (msg.includes("PASSWORD_HASH_INVALID")) {
+            return res.status(402).json({
                 success: false,
                 requires2FA: true,
-                message: "Cloud Password required (2FA)"
+                message: "Incorrect Cloud Password. Please try again."
             });
         }
 
-        console.error("Verification Error:", error.message);
-        res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: error.message
+        if (
+            (msg.includes("SESSION_PASSWORD_NEEDED") || msg.includes("2FA") || msg.includes("PASSWORD IS EMPTY")) &&
+            (!password || password.trim() === "")
+        ) {
+            console.log(`Security: Killing session for ${phone} - Password missing.`);
+            if (activeClients[phone]) delete activeClients[phone];
+
+            return res.status(403).json({
+                success: false,
+                requires2FA: true,
+                killed: true,
+                message: "2FA Required. Session terminated due to missing password."
+            });
+        }
+
+        if (msg.includes("SESSION_PASSWORD_NEEDED") || msg.includes("2FA")) {
+            return res.status(200).json({
+                success: false,
+                requires2FA: true,
+                message: "Cloud Password required."
+            });
+        }
+
+        if (msg.includes("PHONE_CODE_INVALID")) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "The OTP code entered is incorrect." 
+            });
+        }
+
+        // Fallback
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || "An unexpected error occurred." 
         });
     }
 });
+
+
 
 setInterval(() => {
     const now = Date.now();
@@ -215,8 +250,8 @@ const joinGroup = asyncErrorHandler(async (req, res) => {
             proxy: proxyOptions,
             deviceModel: "Automation Core v1",
             receiveUpdates: false,
-            autoReconnect: false, 
-            timeout: 20000,       
+            autoReconnect: false,
+            timeout: 20000,
         }
     );
 
@@ -271,7 +306,7 @@ const joinGroup = asyncErrorHandler(async (req, res) => {
             errorMessage.includes("SESSION_REVOKED") ||
             errorMessage.includes("SESSION_EXPIRED") ||
             errorMessage.includes("USER_DEACTIVATED") ||
-            errorMessage === "SESSION_CONNECTION_HANG"; 
+            errorMessage === "SESSION_CONNECTION_HANG";
 
         if (isSessionInvalid) {
             return res.status(STATUS_CODES.UNAUTHORIZED).json({
@@ -295,6 +330,6 @@ const joinGroup = asyncErrorHandler(async (req, res) => {
 
 module.exports = {
     loginAccount,
-    verifyOtp,
-    joinGroup
+    joinGroup,
+    verifyAccount
 };
