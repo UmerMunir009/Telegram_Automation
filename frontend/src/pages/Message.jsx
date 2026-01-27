@@ -3,15 +3,16 @@ import axios from 'axios';
 import { backendUrl } from '../App';
 import { toast } from 'react-toastify';
 import { 
-    Send, Timer, Users, MessageSquare, RefreshCcw, 
-    Play, UserCheck, Terminal, Zap, Loader2, Check, Square
+    Send, Timer, MessageSquare, RefreshCcw, 
+    Terminal, Zap, Loader2, Check, Square, UserPlus
 } from 'lucide-react';
 
 const Messages = ({ token }) => {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedSenderIds, setSelectedSenderIds] = useState([]);
-    const [selectedReceiverIds, setSelectedReceiverIds] = useState([]);
+    
+    const [receiverHandlesRaw, setReceiverHandlesRaw] = useState('');
     const [messageText, setMessageText] = useState('');
     const [delaySeconds, setDelaySeconds] = useState(10); 
     const [logs, setLogs] = useState([]);
@@ -20,8 +21,6 @@ const Messages = ({ token }) => {
     
     const logEndRef = useRef(null);
     const stopSignal = useRef(false); 
-
-    const availableAsReceivers = accounts.filter(acc => !selectedSenderIds.includes(acc.id));
 
     useEffect(() => {
         fetchAccounts();
@@ -39,7 +38,7 @@ const Messages = ({ token }) => {
             });
             setAccounts(response.data.data || []);
         } catch (error) {
-            toast.error("Failed to fetch accounts");
+            toast.error("Failed to fetch sender accounts");
         } finally {
             setLoading(false);
         }
@@ -54,13 +53,6 @@ const Messages = ({ token }) => {
         setSelectedSenderIds(prev => 
             prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
         );
-        setSelectedReceiverIds(prev => prev.filter(a => a !== id));
-    };
-
-    const toggleReceiver = (id) => {
-        setSelectedReceiverIds(prev => 
-            prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
-        );
     };
 
     const handleStop = () => {
@@ -69,41 +61,47 @@ const Messages = ({ token }) => {
     };
 
     const handleStartSequence = async () => {
-        if (selectedSenderIds.length === 0 || selectedReceiverIds.length === 0) return;
+        const handles = receiverHandlesRaw
+            .split(/[\n,]+/)
+            .map(h => h.trim())
+            .filter(h => h !== '');
+
+        if (selectedSenderIds.length === 0 || handles.length === 0) {
+            toast.error("Select at least one sender and add recipient handles");
+            return;
+        }
         
         stopSignal.current = false;
         setIsSending(true);
-        setProgress({ current: 0, total: selectedReceiverIds.length });
-        addLog("INITIALIZING SEQUENTIAL DEPLOYMENT...", "info");
+        setProgress({ current: 0, total: handles.length });
+        addLog(`INITIALIZING DEPLOYMENT TO ${handles.length} TARGETS...`, "info");
 
-        for (let i = 0; i < selectedReceiverIds.length; i++) {
+        for (let i = 0; i < handles.length; i++) {
             if (stopSignal.current) {
                 addLog("SEQUENCE HALTED BY USER", "error");
                 break;
             }
 
-            const targetAcc = accounts.find(a => a.id === selectedReceiverIds[i]);
+            const targetHandle = handles[i];
             const senderId = selectedSenderIds[i % selectedSenderIds.length];
             const senderAcc = accounts.find(a => a.id === senderId);
-            
-            const handle = targetAcc.name || targetAcc.phone;
-            const senderName = senderAcc.name || "Unknown Node";
+            const senderName = senderAcc?.name || senderAcc?.phone || "Unknown Node";
 
             try {
-                addLog(`Sending message: ${handle} via node (${senderName})`, "info");
+                addLog(`Sending message: ${targetHandle} via node (${senderName})`, "info");
                 
                 const response = await axios.post(`${backendUrl}/telegram/send-message`, {
-                    targetHandle: handle,
+                    targetHandle: targetHandle,
                     message: messageText,
                     senderId: senderId
                 }, { headers: { 'Authorization': `Bearer ${token}` } });
 
                 if (response.data.success) {
-                    addLog(`[OK] Successfully delivered to ${handle}`, "success");
+                    addLog(`[OK] Successfully delivered to ${targetHandle}`, "success");
                 }
             } catch (error) {
                 const errorMsg = error.response?.data?.message || "Internal Protocol Error";
-                addLog(`[FAIL] ${handle}: ${errorMsg}`, "error");
+                addLog(`[FAIL] ${targetHandle}: ${errorMsg}`, "error");
                 
                 if (errorMsg.includes("AUTH_KEY_UNREGISTERED")) {
                     addLog(`CRITICAL: Node (${senderName}) session expired.`, "error");
@@ -112,11 +110,11 @@ const Messages = ({ token }) => {
 
             setProgress(prev => ({ ...prev, current: i + 1 }));
 
-            if (i < selectedReceiverIds.length - 1 && !stopSignal.current) {
+            if (i < handles.length - 1 && !stopSignal.current) {
                 const jitter = Math.floor(Math.random() * (delaySeconds * 0.4)) - (delaySeconds * 0.2);
                 const finalDelay = Math.max(1, delaySeconds + jitter);
                 
-                addLog(`Cooldown: ${finalDelay.toFixed(1)}s (inc. jitter)...`);
+                addLog(`Cooldown: ${finalDelay.toFixed(1)}s...`);
                 await new Promise(resolve => setTimeout(resolve, finalDelay * 1000));
             }
         }
@@ -136,7 +134,7 @@ const Messages = ({ token }) => {
                             <h1 className="text-3xl font-black text-white tracking-tighter flex items-center gap-3">
                                 <Send className="text-blue-500" /> AUTO-MESSAGE SENDER
                             </h1>
-                            <p className="text-slate-500 text-[10px] uppercase tracking-[0.3em]">Direct Sequential Protocol</p>
+                            <p className="text-slate-500 text-[10px] uppercase tracking-[0.3em]">Sequential Handle Deployment</p>
                         </div>
                         <button onClick={fetchAccounts} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
                             <RefreshCcw size={18} className={loading ? "animate-spin text-blue-400" : ""} />
@@ -147,11 +145,11 @@ const Messages = ({ token }) => {
                         <div className="flex justify-between items-center mb-4">
                             <label className="text-[10px] font-bold text-blue-400 uppercase flex items-center gap-2">
                                 <span className="w-5 h-5 bg-blue-500 text-black rounded-full flex items-center justify-center text-[10px]">01</span>
-                                Select Sending Nodes
+                                Select Sending Nodes (From DB)
                             </label>
-                            <span className="text-[10px] text-slate-500">{selectedSenderIds.length} Nodes Active</span>
+                            <span className="text-[10px] text-slate-500">{selectedSenderIds.length} Senders Active</span>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                             {accounts.map(acc => (
                                 <button 
                                     key={acc.id}
@@ -162,43 +160,27 @@ const Messages = ({ token }) => {
                                         : 'bg-white/5 border-transparent hover:border-white/10'
                                     }`}
                                 >
-                                    <p className="text-[10px] font-bold text-white truncate">{acc.name || "Unnamed"}</p>
+                                    <p className="text-[10px] font-bold text-white truncate">{acc.name || "Node"}</p>
                                     <p className="text-[9px] text-slate-500">{acc.phone}</p>
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    <div className={`bg-slate-900/40 border border-white/5 rounded-3xl p-6 transition-all ${selectedSenderIds.length === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
+                    <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6">
                         <div className="flex justify-between items-center mb-4">
                             <label className="text-[10px] font-bold text-emerald-400 uppercase flex items-center gap-2">
                                 <span className="w-5 h-5 bg-emerald-500 text-black rounded-full flex items-center justify-center text-[10px]">02</span>
-                                Select Target Receivers
+                                Bulk Recipient Handles
                             </label>
-                            <div className="flex gap-4">
-                                <button onClick={() => setSelectedReceiverIds(availableAsReceivers.map(a => a.id))} className="text-[9px] text-slate-400 hover:text-white">SELECT ALL</button>
-                                <button onClick={() => setSelectedReceiverIds([])} className="text-[9px] text-slate-400 hover:text-white">CLEAR</button>
-                            </div>
+                            <span className="text-[9px] text-slate-500">One @username  per line</span>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                            {availableAsReceivers.map(acc => (
-                                <button 
-                                    key={acc.id}
-                                    onClick={() => toggleReceiver(acc.id)}
-                                    className={`p-3 rounded-xl border text-left transition-all ${
-                                        selectedReceiverIds.includes(acc.id) 
-                                        ? 'bg-emerald-600/20 border-emerald-500' 
-                                        : 'bg-white/5 border-transparent hover:border-white/10'
-                                    }`}
-                                >
-                                    <div className="flex justify-between items-center">
-                                        <p className="text-[10px] font-bold text-white truncate">{acc.name || "Contact"}</p>
-                                        {selectedReceiverIds.includes(acc.id) && <Check size={10} className="text-emerald-400" />}
-                                    </div>
-                                    <p className="text-[9px] text-slate-500">{acc.phone}</p>
-                                </button>
-                            ))}
-                        </div>
+                        <textarea 
+                            value={receiverHandlesRaw}
+                            onChange={(e) => setReceiverHandlesRaw(e.target.value)}
+                            className="w-full h-48 bg-black/40 border border-white/10 rounded-2xl p-4 text-xs font-mono text-emerald-400 focus:border-emerald-500 outline-none resize-none"
+                            placeholder="@username1&#10;@username2&#10;+123456789"
+                        />
                     </div>
 
                     <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6">
@@ -216,14 +198,14 @@ const Messages = ({ token }) => {
 
                 <div className="col-span-12 lg:col-span-4 space-y-6">
                     
-                    <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-xl shadow-blue-900/20">
+                    <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-xl shadow-blue-900/20  top-6">
                         <div className="flex justify-between items-start mb-6">
                             <div className="bg-white/20 p-2 rounded-xl">
                                 {isSending ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} fill="currentColor" />}
                             </div>
                             <div className="text-right">
-                                <p className="text-[10px] font-bold uppercase opacity-60">Sequence Status</p>
-                                <p className="text-sm font-black tracking-widest">{isSending ? "EXECUTING" : "READY"}</p>
+                                <p className="text-[10px] font-bold uppercase opacity-60">Status</p>
+                                <p className="text-sm font-black tracking-widest">{isSending ? "SENDING" : "STANDBY"}</p>
                             </div>
                         </div>
                         
@@ -243,13 +225,13 @@ const Messages = ({ token }) => {
 
                             <div className="flex items-end gap-4">
                                 <div className="flex-1">
-                                    <label className="text-[9px] font-bold uppercase opacity-60 block mb-1">Interval (Seconds)</label>
+                                    <label className="text-[9px] font-bold uppercase opacity-60 block mb-1">Delay (Sec)</label>
                                     <div className="flex items-center gap-2 bg-black/20 rounded-lg px-3 py-2">
                                         <Timer size={14} />
                                         <input 
                                             type="number" 
                                             min="1"
-                                            onKeyDown={(e) => ["e", "E", "-", "+"].includes(e.key) && e.preventDefault()} // Block invalid chars
+                                            onKeyDown={(e) => ["e", "E", "-", "+"].includes(e.key) && e.preventDefault()}
                                             value={delaySeconds} 
                                             onChange={(e) => setDelaySeconds(Math.max(1, parseInt(e.target.value) || 0))}
                                             className="bg-transparent w-full outline-none text-xs font-bold"
@@ -262,12 +244,12 @@ const Messages = ({ token }) => {
                                         onClick={handleStop}
                                         className="h-12 w-24 bg-red-500 text-white rounded-2xl flex items-center justify-center font-bold text-xs hover:bg-red-600 transition-colors"
                                     >
-                                        <Square size={16} fill="white" className="mr-2" /> STOP
+                                        <Square size={14} fill="white" className="mr-2" /> STOP
                                     </button>
                                 ) : (
                                     <button 
                                         onClick={handleStartSequence}
-                                        disabled={selectedReceiverIds.length === 0 || !messageText}
+                                        disabled={selectedSenderIds.length === 0 || !receiverHandlesRaw || !messageText}
                                         className="h-12 w-24 bg-white text-blue-600 rounded-2xl flex items-center justify-center font-bold text-xs hover:scale-105 transition-transform disabled:opacity-50"
                                     >
                                         DEPLOY
@@ -286,8 +268,8 @@ const Messages = ({ token }) => {
                         </div>
                         <div className="p-4 overflow-y-auto flex-1 space-y-2 font-mono text-[10px]">
                             {logs.length === 0 && (
-                                <div className="h-full flex items-center justify-center opacity-10">
-                                    <p className="uppercase tracking-widest text-[8px]">Standby for deployment...</p>
+                                <div className="h-full flex items-center justify-center opacity-10 text-center px-4">
+                                    <p className="uppercase tracking-widest text-[8px]">Waiting for sequence initiation...</p>
                                 </div>
                             )}
                             {logs.map((log, i) => (
