@@ -4,31 +4,23 @@ import { backendUrl } from '../App';
 import { toast } from 'react-toastify';
 import { 
     Send, Timer, MessageSquare, RefreshCcw, 
-    Terminal, Zap, Loader2, Check, Square, UserPlus
+    Terminal, Zap, Loader2, Check, Square, Trash2, Layers
 } from 'lucide-react';
 
 const Messages = ({ token }) => {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedSenderIds, setSelectedSenderIds] = useState([]);
-    
     const [receiverHandlesRaw, setReceiverHandlesRaw] = useState('');
     const [messageText, setMessageText] = useState('');
     const [delaySeconds, setDelaySeconds] = useState(10); 
-    const [logs, setLogs] = useState([]);
-    const [isSending, setIsSending] = useState(false);
-    const [progress, setProgress] = useState({ current: 0, total: 0 });
     
-    const logEndRef = useRef(null);
-    const stopSignal = useRef(false); 
+    const [campaigns, setCampaigns] = useState([]);
+    const stopSignals = useRef({});
 
     useEffect(() => {
         fetchAccounts();
     }, []);
-
-    useEffect(() => {
-        logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [logs]);
 
     const fetchAccounts = async () => {
         try {
@@ -44,9 +36,13 @@ const Messages = ({ token }) => {
         }
     };
 
-    const addLog = (msg, type = 'info') => {
+    const addCampaignLog = (campaignId, msg, type = 'info') => {
         const timestamp = new Date().toLocaleTimeString([], { hour12: false });
-        setLogs(prev => [...prev, { timestamp, msg, type }]);
+        setCampaigns(prev => prev.map(c => 
+            c.id === campaignId 
+            ? { ...c, logs: [...c.logs, { timestamp, msg, type }] } 
+            : c
+        ));
     };
 
     const toggleSender = (id) => {
@@ -55,110 +51,119 @@ const Messages = ({ token }) => {
         );
     };
 
-    const handleStop = () => {
-        stopSignal.current = true;
-        addLog("STOP SIGNAL RECEIVED. Finishing current task...", "error");
+    const handleStopCampaign = (id) => {
+        stopSignals.current[id] = true;
+        addCampaignLog(id, "STOP SIGNAL RECEIVED. Ending deployment...", "error");
     };
 
-    const handleStartSequence = async () => {
+    const removeCampaign = (id) => {
+        setCampaigns(prev => prev.filter(c => c.id !== id));
+        delete stopSignals.current[id];
+    };
+
+    const startNewCampaign = async () => {
         const handles = receiverHandlesRaw
             .split(/[\n,]+/)
             .map(h => h.trim())
             .filter(h => h !== '');
 
-        if (selectedSenderIds.length === 0 || handles.length === 0) {
-            toast.error("Select at least one sender and add recipient handles");
+        if (selectedSenderIds.length === 0 || handles.length === 0 || !messageText) {
+            toast.error("Please select senders, targets, and enter a message.");
             return;
         }
+
+        const campaignId = Date.now();
+        stopSignals.current[campaignId] = false;
+
+        const newCampaign = {
+            id: campaignId,
+            timestamp: new Date().toLocaleTimeString(),
+            targets: handles,
+            senderIds: [...selectedSenderIds], 
+            message: messageText,
+            current: 0,
+            total: handles.length,
+            logs: [{ timestamp: new Date().toLocaleTimeString([], { hour12: false }), msg: "Campaign Initialized", type: 'info' }],
+            status: 'running'
+        };
+
+        setCampaigns(prev => [newCampaign, ...prev]);
         
-        stopSignal.current = false;
-        setIsSending(true);
-        setProgress({ current: 0, total: handles.length });
-        addLog(`INITIALIZING DEPLOYMENT TO ${handles.length} TARGETS...`, "info");
+        setReceiverHandlesRaw('');
+        setMessageText('');
 
-        for (let i = 0; i < handles.length; i++) {
-            if (stopSignal.current) {
-                addLog("SEQUENCE HALTED BY USER", "error");
-                break;
-            }
+        runDeployment(newCampaign);
+    };
 
-            const targetHandle = handles[i];
-            const senderId = selectedSenderIds[i % selectedSenderIds.length];
+    const runDeployment = async (campaign) => {
+        const { id, targets, senderIds, message } = campaign;
+
+        for (let i = 0; i < targets.length; i++) {
+            if (stopSignals.current[id]) break;
+
+            const targetHandle = targets[i];
+            const senderId = senderIds[i % senderIds.length];
             const senderAcc = accounts.find(a => a.id === senderId);
-            const senderName = senderAcc?.name || senderAcc?.phone || "Unknown Node";
+            const senderName = senderAcc?.name || senderAcc?.phone || "Node";
 
             try {
-                addLog(`Sending message: ${targetHandle} via node (${senderName})`, "info");
+                addCampaignLog(id, `Sending to ${targetHandle} via node (${senderName})`, "info");
                 
                 const response = await axios.post(`${backendUrl}/telegram/send-message`, {
                     targetHandle: targetHandle,
-                    message: messageText,
+                    message: message,
                     senderId: senderId
                 }, { headers: { 'Authorization': `Bearer ${token}` } });
 
                 if (response.data.success) {
-                    addLog(`[OK] Successfully delivered to ${targetHandle}`, "success");
+                    addCampaignLog(id, `[OK] Delivered to ${targetHandle}`, "success");
                 }
             } catch (error) {
-                const errorMsg = error.response?.data?.message || "Internal Protocol Error";
-                addLog(`[FAIL] ${targetHandle}: ${errorMsg}`, "error");
+                const errorMsg = error.response?.data?.message || "Internal Error";
                 
-                if (errorMsg.includes("AUTH_KEY_UNREGISTERED")) {
-                    addLog(`CRITICAL: Node (${senderName}) session expired.`, "error");
+                if (errorMsg.includes("PEER_FLOOD")) {
+                    addCampaignLog(id, `[FAIL] ${targetHandle}: PEER_FLOOD (Account restricted/Privacy settings)`, "error");
+                } else {
+                    addCampaignLog(id, `[FAIL] ${targetHandle}: ${errorMsg}`, "error");
                 }
             }
 
-            setProgress(prev => ({ ...prev, current: i + 1 }));
+            setCampaigns(prev => prev.map(c => c.id === id ? { ...c, current: i + 1 } : c));
 
-            if (i < handles.length - 1 && !stopSignal.current) {
+            if (i < targets.length - 1 && !stopSignals.current[id]) {
                 const jitter = Math.floor(Math.random() * (delaySeconds * 0.4)) - (delaySeconds * 0.2);
                 const finalDelay = Math.max(1, delaySeconds + jitter);
-                
-                addLog(`Cooldown: ${finalDelay.toFixed(1)}s...`);
                 await new Promise(resolve => setTimeout(resolve, finalDelay * 1000));
             }
         }
 
-        setIsSending(false);
-        addLog("DEPLOYMENT SEQUENCE FINISHED.", "info");
-        toast.info("Task completed.");
+        addCampaignLog(id, "DEPLOYMENT SEQUENCE FINISHED.", "info");
+        setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: 'finished' } : c));
     };
 
     return (
         <div className="min-h-screen text-slate-300 p-4 lg:p-8 ">
             <div className="max-w-7xl mx-auto grid grid-cols-12 gap-6">
                 
-                <div className="col-span-12 lg:col-span-8 space-y-6">
-                    <div className="flex justify-between items-center border-b border-white/5 pb-6">
-                        <div>
-                            <h1 className="text-3xl font-black text-white tracking-tighter flex items-center gap-3">
-                                <Send className="text-blue-500" /> AUTO-MESSAGE SENDER
-                            </h1>
-                            <p className="text-slate-500 text-[10px] uppercase tracking-[0.3em]">Sequential Handle Deployment</p>
-                        </div>
-                        <button onClick={fetchAccounts} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
-                            <RefreshCcw size={18} className={loading ? "animate-spin text-blue-400" : ""} />
-                        </button>
+                <div className="col-span-12 lg:col-span-5 space-y-6">
+                    <div className="border-b border-white/5 pb-6">
+                        <h1 className="text-3xl font-black text-white tracking-tighter flex items-center gap-3">
+                            <Layers className="text-blue-500" /> CAMPAIGN HUB
+                        </h1>
+                        <p className="text-slate-500 text-[10px] uppercase tracking-[0.3em]">Configure and launch multiple nodes</p>
                     </div>
 
                     <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6">
                         <div className="flex justify-between items-center mb-4">
-                            <label className="text-[10px] font-bold text-blue-400 uppercase flex items-center gap-2">
-                                <span className="w-5 h-5 bg-blue-500 text-black rounded-full flex items-center justify-center text-[10px]">01</span>
-                                Select Sending Nodes (From DB)
-                            </label>
-                            <span className="text-[10px] text-slate-500">{selectedSenderIds.length} Senders Active</span>
+                            <label className="text-[10px] font-bold text-blue-400 uppercase flex items-center gap-2">Node Selection</label>
+                            <button onClick={fetchAccounts}><RefreshCcw size={14} className={loading ? "animate-spin" : ""} /></button>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                             {accounts.map(acc => (
                                 <button 
-                                    key={acc.id}
+                                    key={acc.id} 
                                     onClick={() => toggleSender(acc.id)}
-                                    className={`p-3 rounded-xl border text-left transition-all ${
-                                        selectedSenderIds.includes(acc.id) 
-                                        ? 'bg-blue-600/20 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.1)]' 
-                                        : 'bg-white/5 border-transparent hover:border-white/10'
-                                    }`}
+                                    className={`p-3 rounded-xl border text-left transition-all ${selectedSenderIds.includes(acc.id) ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-transparent'}`}
                                 >
                                     <p className="text-[10px] font-bold text-white truncate">{acc.name || "Node"}</p>
                                     <p className="text-[9px] text-slate-500">{acc.phone}</p>
@@ -168,124 +173,101 @@ const Messages = ({ token }) => {
                     </div>
 
                     <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <label className="text-[10px] font-bold text-emerald-400 uppercase flex items-center gap-2">
-                                <span className="w-5 h-5 bg-emerald-500 text-black rounded-full flex items-center justify-center text-[10px]">02</span>
-                                Bulk Recipient Handles
-                            </label>
-                            <span className="text-[9px] text-slate-500">One @username  per line</span>
-                        </div>
+                        <label className="text-[10px] font-bold text-emerald-400 uppercase block mb-3">Target Recipients</label>
                         <textarea 
-                            value={receiverHandlesRaw}
+                            value={receiverHandlesRaw} 
                             onChange={(e) => setReceiverHandlesRaw(e.target.value)}
-                            className="w-full h-48 bg-black/40 border border-white/10 rounded-2xl p-4 text-xs font-mono text-emerald-400 focus:border-emerald-500 outline-none resize-none"
-                            placeholder="@username1&#10;@username2&#10;+123456789"
+                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-xs font-mono text-emerald-400 outline-none resize-none"
+                            placeholder="@handle1, @handle2..."
                         />
                     </div>
 
                     <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6">
-                        <label className="text-[10px] font-bold text-purple-400 uppercase flex items-center gap-2 mb-4">
-                            <MessageSquare size={14} /> Message Content
-                        </label>
+                        <label className="text-[10px] font-bold text-purple-400 uppercase block mb-3">Transmission Message</label>
                         <textarea 
-                            value={messageText}
+                            value={messageText} 
                             onChange={(e) => setMessageText(e.target.value)}
-                            className="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-xs text-white focus:border-purple-500 outline-none resize-none"
-                            placeholder="Enter the transmission text here..."
+                            className="w-full h-24 bg-black/40 border border-white/10 rounded-2xl p-4 text-xs text-white outline-none resize-none"
+                            placeholder="Message body..."
                         />
+                    </div>
+
+                    <div className="flex gap-4">
+                        <div className="flex-1 bg-slate-900/40 border border-white/5 rounded-2xl p-3 flex items-center gap-3">
+                            <Timer size={16} className="text-slate-500" />
+                            <input 
+                                type="number" 
+                                value={delaySeconds} 
+                                onChange={(e) => setDelaySeconds(parseInt(e.target.value) || 1)}
+                                className="bg-transparent w-full text-sm font-bold outline-none"
+                            />
+                        </div>
+                        <button 
+                            onClick={startNewCampaign}
+                            className="px-8 bg-blue-600 text-white rounded-2xl font-black text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-900/40"
+                        >
+                            START CAMPAIGN
+                        </button>
                     </div>
                 </div>
 
-                <div className="col-span-12 lg:col-span-4 space-y-6">
+                <div className="col-span-12 lg:col-span-7 space-y-4 h-[85vh] overflow-y-auto pr-2 custom-scrollbar">
+                    <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest px-2">Live Monitor ({campaigns.length})</h2>
                     
-                    <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-xl shadow-blue-900/20  top-6">
-                        <div className="flex justify-between items-start mb-6">
-                            <div className="bg-white/20 p-2 rounded-xl">
-                                {isSending ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} fill="currentColor" />}
-                            </div>
-                            <div className="text-right">
-                                <p className="text-[10px] font-bold uppercase opacity-60">Status</p>
-                                <p className="text-sm font-black tracking-widest">{isSending ? "SENDING" : "STANDBY"}</p>
-                            </div>
+                    {campaigns.length === 0 && (
+                        <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[40px] opacity-20">
+                            <Zap size={40} />
+                            <p className="text-[10px] mt-4 font-bold tracking-[0.4em]">NO ACTIVE DEPLOYMENTS</p>
                         </div>
-                        
-                        <div className="space-y-6">
-                            <div>
-                                <div className="flex justify-between text-[10px] font-bold uppercase mb-2">
-                                    <span>Progress</span>
-                                    <span>{progress.current} / {progress.total}</span>
+                    )}
+
+                    {campaigns.map(camp => (
+                        <div key={camp.id} className="bg-slate-900/80 border border-white/10 rounded-[32px] p-6 space-y-4">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`w-2 h-2 rounded-full ${camp.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`} />
+                                        <h3 className="font-black text-white text-sm uppercase tracking-tight">Campaign_{camp.id}</h3>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-1">Launched at {camp.timestamp} • {camp.senderIds.length} Nodes</p>
                                 </div>
-                                <div className="h-1.5 bg-black/20 rounded-full overflow-hidden">
+                                <div className="flex gap-2">
+                                    {camp.status === 'running' && (
+                                        <button onClick={() => handleStopCampaign(camp.id)} className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20">
+                                            <Square size={16} fill="currentColor" />
+                                        </button>
+                                    )}
+                                    <button onClick={() => removeCampaign(camp.id)} className="p-2 bg-white/5 text-slate-500 rounded-xl hover:text-white">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex justify-between text-[10px] font-black uppercase">
+                                    <span className="text-blue-400">Progress</span>
+                                    <span className="text-white">{camp.current} / {camp.total}</span>
+                                </div>
+                                <div className="h-2 bg-black rounded-full overflow-hidden">
                                     <div 
-                                        className="h-full bg-white transition-all duration-500" 
-                                        style={{ width: `${(progress.current / progress.total) * 100 || 0}%` }}
+                                        className={`h-full transition-all duration-700 ${camp.status === 'finished' ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                        style={{ width: `${(camp.current / camp.total) * 100}%` }}
                                     />
                                 </div>
                             </div>
 
-                            <div className="flex items-end gap-4">
-                                <div className="flex-1">
-                                    <label className="text-[9px] font-bold uppercase opacity-60 block mb-1">Delay (Sec)</label>
-                                    <div className="flex items-center gap-2 bg-black/20 rounded-lg px-3 py-2">
-                                        <Timer size={14} />
-                                        <input 
-                                            type="number" 
-                                            min="1"
-                                            onKeyDown={(e) => ["e", "E", "-", "+"].includes(e.key) && e.preventDefault()}
-                                            value={delaySeconds} 
-                                            onChange={(e) => setDelaySeconds(Math.max(1, parseInt(e.target.value) || 0))}
-                                            className="bg-transparent w-full outline-none text-xs font-bold"
-                                        />
+                            <div className="bg-black/50 rounded-2xl p-4 h-40 overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar">
+                                {camp.logs.map((log, idx) => (
+                                    <div key={idx} className="flex gap-2 border-l border-white/5 pl-2">
+                                        <span className="text-slate-600 shrink-0">[{log.timestamp}]</span>
+                                        <span className={log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : 'text-blue-400'}>
+                                            {log.msg}
+                                        </span>
                                     </div>
-                                </div>
-                                
-                                {isSending ? (
-                                    <button 
-                                        onClick={handleStop}
-                                        className="h-12 w-24 bg-red-500 text-white rounded-2xl flex items-center justify-center font-bold text-xs hover:bg-red-600 transition-colors"
-                                    >
-                                        <Square size={14} fill="white" className="mr-2" /> STOP
-                                    </button>
-                                ) : (
-                                    <button 
-                                        onClick={handleStartSequence}
-                                        disabled={selectedSenderIds.length === 0 || !receiverHandlesRaw || !messageText}
-                                        className="h-12 w-24 bg-white text-blue-600 rounded-2xl flex items-center justify-center font-bold text-xs hover:scale-105 transition-transform disabled:opacity-50"
-                                    >
-                                        DEPLOY
-                                    </button>
-                                )}
+                                ))}
                             </div>
                         </div>
-                    </div>
-
-                    <div className="bg-black border border-white/5 rounded-3xl overflow-hidden flex flex-col h-[520px]">
-                        <div className="p-4 bg-white/5 border-b border-white/5 flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-slate-400">
-                                <Terminal size={14} /> System_Log
-                            </span>
-                            <button onClick={() => setLogs([])} className="text-[9px] text-slate-500 hover:text-white transition-colors">CLEAR</button>
-                        </div>
-                        <div className="p-4 overflow-y-auto flex-1 space-y-2 font-mono text-[10px]">
-                            {logs.length === 0 && (
-                                <div className="h-full flex items-center justify-center opacity-10 text-center px-4">
-                                    <p className="uppercase tracking-widest text-[8px]">Waiting for sequence initiation...</p>
-                                </div>
-                            )}
-                            {logs.map((log, i) => (
-                                <div key={i} className="flex gap-2 leading-relaxed border-l border-white/5 pl-2">
-                                    <span className="text-slate-600 shrink-0">[{log.timestamp}]</span>
-                                    <span className={
-                                        log.type === 'error' ? 'text-red-500' : 
-                                        log.type === 'success' ? 'text-emerald-400' : 'text-blue-400'
-                                    }>
-                                        {log.msg}
-                                    </span>
-                                </div>
-                            ))}
-                            <div ref={logEndRef} />
-                        </div>
-                    </div>
+                    ))}
                 </div>
             </div>
         </div>
