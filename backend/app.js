@@ -9,6 +9,8 @@ const CustomError = require("./utils/CustomError");
 const globalErrorHandler = require("./controllers/error/errorController");
 const app = express();
 
+require('./services/telegram/join.worker');
+
 
 app.use(cors({
   origin: "*", 

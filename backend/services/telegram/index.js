@@ -1,9 +1,10 @@
 const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
-const { Proxy, User } = require("../../models");
+const { Proxy, User, JoinJob } = require("../../models");
 const { STATUS_CODES } = require("../../config/constants");
 const asyncErrorHandler = require("../../utils/asyncErrorHandler");
 const { Api } = require("telegram");
+const { joinQueue } = require("../../services/telegram/queue.service");
 
 const activeClients = {};
 
@@ -208,124 +209,124 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
-const joinGroup = asyncErrorHandler(async (req, res) => {
-    const { phone, channelUrl } = req.body;
+// const joinGroup = asyncErrorHandler(async (req, res) => {
+//     const { phone, channelUrl } = req.body;
 
-    if (!phone || !channelUrl) {
-        return res.status(STATUS_CODES.BAD_REQUEST).json({
-            success: false,
-            message: "Phone number and Target URL are required",
-        });
-    }
+//     if (!phone || !channelUrl) {
+//         return res.status(STATUS_CODES.BAD_REQUEST).json({
+//             success: false,
+//             message: "Phone number and Target URL are required",
+//         });
+//     }
 
-    const user = await User.findOne({
-        where: { phone: phone },
-        include: [{ model: Proxy, as: 'proxy' }]
-    });
+//     const user = await User.findOne({
+//         where: { phone: phone },
+//         include: [{ model: Proxy, as: 'proxy' }]
+//     });
 
-    if (!user || !user.sessionString) {
-        return res.status(STATUS_CODES.NOT_FOUND).json({
-            success: false,
-            message: "Active session not found for this account",
-        });
-    }
+//     if (!user || !user.sessionString) {
+//         return res.status(STATUS_CODES.NOT_FOUND).json({
+//             success: false,
+//             message: "Active session not found for this account",
+//         });
+//     }
 
-    let proxyOptions = null;
-    if (user.proxy) {
-        proxyOptions = {
-            ip: user.proxy.host,
-            port: parseInt(user.proxy.port),
-            socksType: 5,
-            password: user.proxy.password,
-            username: user.proxy.username
-        };
-    }
+//     let proxyOptions = null;
+//     if (user.proxy) {
+//         proxyOptions = {
+//             ip: user.proxy.host,
+//             port: parseInt(user.proxy.port),
+//             socksType: 5,
+//             password: user.proxy.password,
+//             username: user.proxy.username
+//         };
+//     }
 
-    const client = new TelegramClient(
-        new StringSession(user.sessionString),
-        parseInt(process.env.TELEGRAM_API_ID),
-        process.env.TELEGRAM_API_HASH,
-        {
-            connectionRetries: 5,
-            proxy: proxyOptions,
-            deviceModel: "Automation Core v1",
-            receiveUpdates: false,
-            autoReconnect: false,
-            timeout: 20000,
-        }
-    );
+//     const client = new TelegramClient(
+//         new StringSession(user.sessionString),
+//         parseInt(process.env.TELEGRAM_API_ID),
+//         process.env.TELEGRAM_API_HASH,
+//         {
+//             connectionRetries: 5,
+//             proxy: proxyOptions,
+//             deviceModel: "Automation Core v1",
+//             receiveUpdates: false,
+//             autoReconnect: false,
+//             timeout: 20000,
+//         }
+//     );
 
-    try {
-        const connectionTimeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("SESSION_CONNECTION_HANG")), 10000)
-        );
+//     try {
+//         const connectionTimeout = new Promise((_, reject) =>
+//             setTimeout(() => reject(new Error("SESSION_CONNECTION_HANG")), 10000)
+//         );
 
-        console.log(`[${phone}] Connecting to Telegram...`);
+//         console.log(`[${phone}] Connecting to Telegram...`);
 
-        await Promise.race([
-            client.connect(),
-            connectionTimeout
-        ]);
+//         await Promise.race([
+//             client.connect(),
+//             connectionTimeout
+//         ]);
 
-        if (client._updateLoop) client._updateLoop = false;
+//         if (client._updateLoop) client._updateLoop = false;
 
-        console.log(`[${phone}] Attempting to join: ${channelUrl}`);
+//         console.log(`[${phone}] Attempting to join: ${channelUrl}`);
 
-        if (channelUrl.includes('t.me/+') || channelUrl.includes('joinchat/')) {
-            const hash = channelUrl.split('/').pop().replace('+', '');
-            await client.invoke(
-                new Api.messages.ImportChatInvite({ hash: hash })
-            );
-        } else {
-            const cleanUsername = channelUrl.replace('https://t.me/', '').replace('@', '');
-            await client.invoke(
-                new Api.channels.JoinChannel({
-                    channel: cleanUsername,
-                })
-            );
-        }
+//         if (channelUrl.includes('t.me/+') || channelUrl.includes('joinchat/')) {
+//             const hash = channelUrl.split('/').pop().replace('+', '');
+//             await client.invoke(
+//                 new Api.messages.ImportChatInvite({ hash: hash })
+//             );
+//         } else {
+//             const cleanUsername = channelUrl.replace('https://t.me/', '').replace('@', '');
+//             await client.invoke(
+//                 new Api.channels.JoinChannel({
+//                     channel: cleanUsername,
+//                 })
+//             );
+//         }
 
-        await client.disconnect();
+//         await client.disconnect();
 
-        return res.status(STATUS_CODES.SUCCESS).json({
-            success: true,
-            message: `Successfully joined ${channelUrl}`,
-        });
+//         return res.status(STATUS_CODES.SUCCESS).json({
+//             success: true,
+//             message: `Successfully joined ${channelUrl}`,
+//         });
 
-    } catch (err) {
-        console.error(`JOIN_ERROR [${phone}]:`, err.message);
+//     } catch (err) {
+//         console.error(`JOIN_ERROR [${phone}]:`, err.message);
 
-        if (client) {
-            try { await client.disconnect(); } catch (e) { /* ignore secondary error */ }
-        }
+//         if (client) {
+//             try { await client.disconnect(); } catch (e) { /* ignore secondary error */ }
+//         }
 
-        const errorMessage = err.message;
+//         const errorMessage = err.message;
 
-        const isSessionInvalid =
-            errorMessage.includes("AUTH_KEY_UNREGISTERED") ||
-            errorMessage.includes("SESSION_REVOKED") ||
-            errorMessage.includes("SESSION_EXPIRED") ||
-            errorMessage.includes("USER_DEACTIVATED") ||
-            errorMessage === "SESSION_CONNECTION_HANG";
+//         const isSessionInvalid =
+//             errorMessage.includes("AUTH_KEY_UNREGISTERED") ||
+//             errorMessage.includes("SESSION_REVOKED") ||
+//             errorMessage.includes("SESSION_EXPIRED") ||
+//             errorMessage.includes("USER_DEACTIVATED") ||
+//             errorMessage === "SESSION_CONNECTION_HANG";
 
-        if (isSessionInvalid) {
-            return res.status(STATUS_CODES.UNAUTHORIZED).json({
-                success: false,
-                message: "session expired relogin",
-            });
-        }
+//         if (isSessionInvalid) {
+//             return res.status(STATUS_CODES.UNAUTHORIZED).json({
+//                 success: false,
+//                 message: "session expired relogin",
+//             });
+//         }
 
-        let userFriendlyError = errorMessage;
-        if (errorMessage.includes("FLOOD_WAIT")) userFriendlyError = "Rate limit hit. Wait before next join.";
-        if (errorMessage.includes("TIMEOUT")) userFriendlyError = "Proxy connection timeout.";
-        if (errorMessage.includes("CHANNELS_TOO_MUCH")) userFriendlyError = "Account is in too many groups.";
+//         let userFriendlyError = errorMessage;
+//         if (errorMessage.includes("FLOOD_WAIT")) userFriendlyError = "Rate limit hit. Wait before next join.";
+//         if (errorMessage.includes("TIMEOUT")) userFriendlyError = "Proxy connection timeout.";
+//         if (errorMessage.includes("CHANNELS_TOO_MUCH")) userFriendlyError = "Account is in too many groups.";
 
-        res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
-            success: false,
-            message: userFriendlyError,
-        });
-    }
-});
+//         res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
+//             success: false,
+//             message: userFriendlyError,
+//         });
+//     }
+// });
 
 
 
@@ -371,9 +372,183 @@ const sendSingle = asyncErrorHandler(async (req, res) => {
     }
 });
 
+const internalJoinLogic = async (phone, channelUrl) => {
+    const user = await User.findOne({
+        where: { phone: phone },
+        include: [{ model: Proxy, as: 'proxy' }]
+    });
+
+    if (!user || !user.sessionString) {
+        throw new Error("Active session not found for this account");
+    }
+
+    let proxyOptions = null;
+    if (user.proxy) {
+        console.log(`[${phone}] 🛡️ Using Proxy: ${user.proxy.host}:${user.proxy.port}`);
+        proxyOptions = {
+            ip: user.proxy.host,
+            port: parseInt(user.proxy.port),
+            socksType: 5,
+            password: user.proxy.password,
+            username: user.proxy.username,
+            timeout: 10000 
+        };
+    } else {
+        console.log(`[${phone}] ⚠️ No Proxy - Connecting Direct`);
+    }
+
+    const client = new TelegramClient(
+        new StringSession(user.sessionString),
+        parseInt(process.env.TELEGRAM_API_ID),
+        process.env.TELEGRAM_API_HASH,
+        {
+            connectionRetries: 1, 
+            proxy: proxyOptions,
+            deviceModel: "Automation Core v1",
+            receiveUpdates: false,
+            autoReconnect: false, 
+            timeout: 30000, 
+            baseLogger: null 
+        }
+    );
+
+    try {
+        console.log(`[${phone}] 🔄 Connecting to Telegram Network...`);
+        
+        await client.connect();
+
+        if (client._updateLoop) client._updateLoop = false;
+
+        console.log(`[${phone}] 🚀 Connected! Joining: ${channelUrl}`);
+
+        if (channelUrl.includes('t.me/+') || channelUrl.includes('joinchat/')) {
+            const hash = channelUrl.split('/').pop().replace('+', '');
+            await client.invoke(new Api.messages.ImportChatInvite({ hash }));
+        } else {
+            const cleanUsername = channelUrl.replace('https://t.me/', '').replace('@', '');
+            await client.invoke(new Api.channels.JoinChannel({ channel: cleanUsername }));
+        }
+
+        console.log(`✅ [${phone}] Join Successful`);
+        return true;
+
+    } catch (err) {
+        const msg = err.message;
+        console.error(`❌ JOIN_ERROR [${phone}]:`, msg);
+
+        if (msg.includes("ECONNRESET")) throw new Error("Proxy Connection Reset (Dead Proxy)");
+        if (msg.includes("ETIMEDOUT")) throw new Error("Proxy Connection Timed Out");
+        if (msg.includes("Authentication failed")) throw new Error("Proxy Credentials Invalid");
+        if (msg.includes("AUTH_KEY_UNREGISTERED")) throw new Error("Session Expired - Re-login Required");
+        if (msg.includes("FLOOD_WAIT")) throw new Error("Rate Limit Hit (Flood Wait)");
+        
+        if (msg.includes("Timeout")) throw new Error("Connection timed out (Proxy too slow)");
+
+        throw err;
+    } finally {
+        if (client) {
+            try { 
+                await client.disconnect();
+                client.destroy(); 
+            } catch (e) {}
+        }
+    }
+};
+
+
+const startJob = asyncErrorHandler(async (req, res) => {
+    const { accounts, urls, delay } = req.body;
+
+    const activeJob = await JoinJob.findOne({ where: { status: 'running' } });
+    if (activeJob) {
+        return res.status(STATUS_CODES.BAD_REQUEST).json({
+            success: false,
+            message: "A task is already running."
+        });
+    }
+
+    const dbJob = await JoinJob.create({
+        total: accounts.length,
+        urls: urls,
+        delay: delay,
+        status: 'running',
+        logs: [{
+            timestamp: new Date().toLocaleTimeString(),
+            message: 'Engine Initialized: Starting sequential joiner...',
+            type: 'info'
+        }]
+    });
+
+    const bullJob = await joinQueue.add('join-task', {
+        dbJobId: dbJob.id,
+        accounts: accounts, 
+        urls: urls,
+        delay: delay
+    });
+
+    await dbJob.update({ bullJobId: bullJob.id });
+
+
+
+    res.status(STATUS_CODES.SUCCESS).json({
+        success: STATUS_CODES.SUCCESS,
+        jobId: dbJob.id
+    });
+});
+
+const stopJob = asyncErrorHandler(async (req, res) => {
+    const activeJob = await JoinJob.findOne({ where: { status: 'running' } });
+    if (activeJob) {
+        await activeJob.update({ status: 'stopped' });
+        return res.status(STATUS_CODES.SUCCESS).json({
+            success: true,
+            message: "Stop signal sent to worker."
+        });
+    }
+    res.status(STATUS_CODES.NOT_FOUND).json({
+        success: STATUS_CODES.NOT_FOUND,
+        message: "No active job found."
+    });
+});
+
+const getLatestStatus = asyncErrorHandler(async (req, res) => {
+    const job = await JoinJob.findOne({ order: [['created', 'DESC']] });
+    res.status(STATUS_CODES.SUCCESS).json(job);
+});
+
+const getJobDetails = asyncErrorHandler(async (req, res) => {
+    const job = await JoinJob.findByPk(req.params.id);
+    res.status(STATUS_CODES.SUCCESS).json(job);
+});
+
+const joinGroup = asyncErrorHandler(async (req, res) => {
+    const { phone, channelUrl } = req.body;
+    try {
+        await internalJoinLogic(phone, channelUrl);
+        return res.status(STATUS_CODES.SUCCESS).json({
+            success: true,
+            message: `Successfully joined ${channelUrl}`,
+        });
+    } catch (err) {
+        res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({
+            success: false,
+            message: err.message
+        });
+    }
+});
+
+
+
+
+
 module.exports = {
     loginAccount,
     joinGroup,
     verifyAccount,
-    sendSingle
+    sendSingle,
+    startJob,
+    stopJob,
+    getLatestStatus,
+    getJobDetails,
+    internalJoinLogic
 };

@@ -16,14 +16,27 @@ const Channel = ({ token }) => {
     const [isRunning, setIsRunning] = useState(false);
     const [logs, setLogs] = useState([]);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
-    
-    const stopSignal = useRef(false);
-
+    const [activeJobId, setActiveJobId] = useState(null);
     const terminalEndRef = useRef(null);
 
     useEffect(() => {
         terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [logs]);
+
+    useEffect(() => {
+        fetchAccounts();
+        checkServerStatus();
+    }, [token]);
+
+    useEffect(() => {
+        let interval;
+        if (isRunning) {
+            interval = setInterval(async () => {
+                await checkServerStatus();
+            }, 3000);
+        }
+        return () => clearInterval(interval);
+    }, [isRunning]);
 
     const fetchAccounts = async () => {
         try {
@@ -35,15 +48,75 @@ const Channel = ({ token }) => {
                 setAccounts(activeOnes);
             }
         } catch (error) {
-            addLog("SYSTEM_ERROR: Connection to Node Registry failed.", "error");
+            toast.error("Failed to fetch accounts");
         }
     };
 
-    useEffect(() => { fetchAccounts(); }, [token]);
+    const checkServerStatus = async () => {
+        try {
+            const response = await axios.get(`${backendUrl}/telegram/join/status`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
 
-    const addLog = (message, type = 'info') => {
-        const timestamp = new Date().toLocaleTimeString();
-        setLogs(prev => [...prev, { timestamp, message, type }]);
+            if (response.data) {
+                const { status, progress, total, logs: dbLogs, id } = response.data;
+
+                if (status === 'running') {
+                    setIsRunning(true);
+                    setActiveJobId(id);
+                    setProgress({ current: progress, total });
+                    setLogs(dbLogs || []);
+                } else {
+                    if (isRunning) {
+                        setIsRunning(false);
+                        setProgress({ current: progress, total });
+                        setLogs(dbLogs || []);
+                        toast.info(`Job ${status}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Status sync failed", error);
+        }
+    };
+
+    const startJoiningProcess = async () => {
+        const urls = channelUrlsRaw
+            .split(/[\n,]+/)
+            .map(u => u.trim())
+            .filter(u => u.includes('t.me/'));
+
+        if (urls.length === 0) return toast.error("Enter valid URLs");
+        if (selectedIds.length === 0) return toast.error("Select accounts");
+
+        const targetAccounts = accounts.filter(a => selectedIds.includes(a.id));
+
+        try {
+            const response = await axios.post(`${backendUrl}/telegram/join/start`, {
+                accounts: targetAccounts,
+                urls,
+                delay
+            }, { headers: { Authorization: `Bearer ${token}` } });
+
+            if (response.data.success) {
+                setIsRunning(true);
+                setActiveJobId(response.data.jobId);
+                toast.success("Deployment pushed to background engine");
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to start job");
+        }
+    };
+
+    const stopJoiningProcess = async () => {
+        try {
+            await axios.post(`${backendUrl}/telegram/join/stop`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            toast.warn("Termination signal sent");
+        } catch (error) {
+            toast.error("Failed to stop job");
+        }
     };
 
     const toggleSelectAll = () => {
@@ -65,69 +138,6 @@ const Channel = ({ token }) => {
         a.phone?.includes(searchTerm)
     );
 
-    const startJoiningProcess = async () => {
-        const urls = channelUrlsRaw
-            .split(/[\n,]+/)
-            .map(u => u.trim())
-            .filter(u => u.includes('t.me/'));
-
-        if (urls.length === 0) return toast.error("Enter valid URLs");
-        if (selectedIds.length === 0) return toast.error("Select accounts");
-
-        setIsRunning(true);
-        stopSignal.current = false;
-        setLogs([]);
-        addLog(`ROUND-ROBIN START: Mapping ${selectedIds.length} accounts to ${urls.length} targets.`, "process");
-
-        const targetAccounts = accounts.filter(a => selectedIds.includes(a.id));
-        setProgress({ current: 0, total: targetAccounts.length });
-
-        for (let i = 0; i < targetAccounts.length; i++) {
-            if (stopSignal.current) {
-                addLog("TERMINATED: Sequence stopped by user.", "error");
-                break;
-            }
-
-            const account = targetAccounts[i];
-            const channelIndex = i % urls.length;
-            const currentUrl = urls[channelIndex];
-            const displayUrl = currentUrl.replace('https://t.me/', '');
-
-            addLog(`ACTION: ${account.name} joining ${displayUrl}`, "process");
-
-            try {
-                const response = await axios.post(`${backendUrl}/telegram/join/group`, {
-                    phone: account.phone,
-                    channelUrl: currentUrl
-                }, { headers: { Authorization: `Bearer ${token}` } });
-
-                if (response.data.success) {
-                    addLog(`SUCCESS: ${account.name} joined.`, "success");
-                }
-            } catch (error) {
-                const errorMsg = error.response?.data?.message || "Join Failed";
-                addLog(`CRITICAL: ${account.name} - ${errorMsg}`, "error");
-            }
-
-            setProgress({ current: i + 1, total: targetAccounts.length });
-
-            if (i < targetAccounts.length - 1 && !stopSignal.current) {
-                const jitter = Math.floor(Math.random() * 11) - 5;
-                const totalWait = Math.max(1, delay + jitter);
-                addLog(`THROTTLING: Cooling down ${totalWait}s...`);
-                
-                for (let j = 0; j < totalWait; j++) {
-                    if (stopSignal.current) break;
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-            }
-        }
-
-        setIsRunning(false);
-        stopSignal.current = false;
-        addLog("SEQUENCE ENDED: Engine entering standby.", "info");
-    };
-
     return (
         <div className="min-h-screen p-2 sm:p-0 font-sans text-white">
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
@@ -142,6 +152,16 @@ const Channel = ({ token }) => {
                     </div>
                     <p className="text-blue-300/60 text-xs font-mono tracking-widest uppercase">Sequential Account Rotation Engine</p>
                 </div>
+
+                {isRunning && (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                        <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-tighter">Remote Worker Active</span>
+                    </div>
+                )}
             </div>
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -158,7 +178,7 @@ const Channel = ({ token }) => {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
-                            <button onClick={toggleSelectAll} className="px-5 py-3 rounded-2xl bg-blue-600 text-xs font-bold uppercase transition-all">
+                            <button onClick={toggleSelectAll} className="px-5 py-3 rounded-2xl bg-blue-600 text-xs font-bold uppercase transition-all hover:bg-blue-500">
                                 {selectedIds.length === filteredAccounts.length ? "Deselect All" : "Select Visible"}
                             </button>
                         </div>
@@ -166,9 +186,9 @@ const Channel = ({ token }) => {
                             <table className="w-full text-left">
                                 <tbody className="divide-y divide-white/5">
                                     {filteredAccounts.map((acc) => (
-                                        <tr key={acc.id} onClick={() => toggleSelectOne(acc.id)} className={`cursor-pointer transition-all ${selectedIds.includes(acc.id) ? 'bg-blue-500/20' : 'hover:bg-white/5'}`}>
+                                        <tr key={acc.id} onClick={() => !isRunning && toggleSelectOne(acc.id)} className={`transition-all ${selectedIds.includes(acc.id) ? 'bg-blue-500/20' : 'hover:bg-white/5'} ${isRunning ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                                             <td className="p-5 w-12">
-                                                <div className={`w-6 h-6 rounded-lg border-2 ${selectedIds.includes(acc.id) ? 'bg-blue-500 border-blue-400' : 'border-white/10'}`}>
+                                                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center ${selectedIds.includes(acc.id) ? 'bg-blue-500 border-blue-400' : 'border-white/10'}`}>
                                                     {selectedIds.includes(acc.id) && <CheckSquare size={14} />}
                                                 </div>
                                             </td>
@@ -221,7 +241,7 @@ const Channel = ({ token }) => {
                                 <button
                                     onClick={startJoiningProcess}
                                     disabled={isRunning || selectedIds.length === 0}
-                                    className={`flex-1 py-5 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-3 ${isRunning ? 'bg-slate-700' : 'bg-blue-600 hover:bg-blue-500'}`}
+                                    className={`flex-1 py-5 rounded-2xl font-black text-sm uppercase transition-all flex items-center justify-center gap-3 ${isRunning ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' : 'bg-blue-600 hover:bg-blue-500'}`}
                                 >
                                     {isRunning ? <Loader2 className="animate-spin" /> : <Play size={16} />}
                                     {isRunning ? `Joining ${progress.current}/${progress.total}` : 'Initiate Deployment'}
@@ -229,8 +249,8 @@ const Channel = ({ token }) => {
 
                                 {isRunning && (
                                     <button
-                                        onClick={() => { stopSignal.current = true; }}
-                                        className="px-6 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl hover:bg-red-500 hover:text-white transition-all animate-pulse"
+                                        onClick={stopJoiningProcess}
+                                        className="px-6 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
                                     >
                                         <Square size={20} fill="currentColor" />
                                     </button>
@@ -244,6 +264,7 @@ const Channel = ({ token }) => {
                             <Terminal size={14} className="animate-pulse" /> Live System Feed
                         </div>
                         <div className="flex-1 overflow-y-auto p-5 font-mono text-[11px] space-y-2">
+                            {logs.length === 0 && <p className="text-blue-300/20 italic">No active session logs...</p>}
                             {logs.map((log, i) => (
                                 <div key={i} className="flex gap-3 animate-in fade-in duration-500">
                                     <span className="text-blue-500">[{log.timestamp}]</span>
@@ -259,6 +280,6 @@ const Channel = ({ token }) => {
             </div>
         </div>
     );
-};
 
+};
 export default Channel;
