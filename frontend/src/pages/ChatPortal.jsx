@@ -91,11 +91,11 @@ const ChatPortal = ({ token }) => {
         <div className="flex flex-col md:flex-row h-[85vh] md:h-[82vh] bg-slate-950/40 backdrop-blur-2xl border border-white/10 rounded-2xl md:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
 
             <div className={`
-        ${selectedChat ? 'hidden md:flex' : 'flex'} 
-        w-full md:w-[350px] lg:w-[400px] flex-col border-r border-white/5 bg-slate-900/20
-      `}>
+                ${selectedChat ? 'hidden md:flex' : 'flex'} 
+                w-full md:w-[350px] lg:w-[400px] flex-col border-r border-white/5 bg-slate-900/20 h-full
+            `}>
 
-                <div className="p-4 md:p-5 border-b border-white/10 bg-white/5 flex items-center justify-between">
+                <div className="p-4 md:p-5 border-b border-white/10 bg-white/5 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         {selectedAccount && (
                             <button
@@ -114,7 +114,7 @@ const ChatPortal = ({ token }) => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 overflow-y-auto custom-scrollbar touch-pan-y">
                     {!selectedAccount ? (
                         <div className="p-3 md:p-4 grid grid-cols-1 gap-2 md:gap-3">
                             {loading.accounts ? (
@@ -139,7 +139,7 @@ const ChatPortal = ({ token }) => {
                             )}
                         </div>
                     ) : (
-                        <div className="flex flex-col">
+                        <div className="flex flex-col min-h-full">
                             {loading.chats ? (
                                 <div className="flex flex-col items-center justify-center p-10 gap-3">
                                     <Loader2 className="animate-spin text-blue-400" />
@@ -151,7 +151,7 @@ const ChatPortal = ({ token }) => {
                                         key={chat.id}
                                         onClick={() => fetchMessages(chat)}
                                         className={`p-3 md:p-4 cursor-pointer border-b border-white/5 transition-all flex flex-col gap-0.5 md:gap-1
-                    ${selectedChat === chat.id ? 'bg-blue-600/20 border-l-4 border-l-blue-400' : 'hover:bg-white/5'}`}
+                                        ${selectedChat === chat.id ? 'bg-blue-600/20 border-l-4 border-l-blue-400' : 'hover:bg-white/5'}`}
                                     >
                                         <div className="flex justify-between items-center">
                                             <span className="font-bold text-sm md:text-base text-slate-200 truncate pr-2">{chat.title}</span>
@@ -169,12 +169,12 @@ const ChatPortal = ({ token }) => {
             </div>
 
             <div className={`
-        ${!selectedChat ? 'hidden md:flex' : 'flex'} 
-        flex-1 flex-col bg-gradient-to-br from-slate-900 to-[#020617] relative
-      `}>
+                ${!selectedChat ? 'hidden md:flex' : 'flex'} 
+                flex-1 flex-col bg-gradient-to-br from-slate-900 to-[#020617] relative h-full
+            `}>
                 {selectedChat ? (
                     <>
-                        <div className="p-4 md:p-5 border-b border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-between">
+                        <div className="p-4 md:p-5 border-b border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setSelectedChat(null)}
@@ -197,7 +197,7 @@ const ChatPortal = ({ token }) => {
 
                         <div
                             ref={scrollRef}
-                            className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-3 md:gap-4 custom-scrollbar"
+                            className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-3 md:gap-4 custom-scrollbar touch-pan-y"
                             style={{ backgroundImage: `url('https://www.transparenttextures.com/patterns/carbon-fibre.png')`, backgroundAttachment: 'fixed' }}
                         >
                             {loading.messages ? (
@@ -220,7 +220,7 @@ const ChatPortal = ({ token }) => {
                             )}
                         </div>
 
-                        <div className="p-4 md:p-6 bg-slate-950/50 border-t border-white/10">
+                        <div className="p-4 md:p-6 bg-slate-950/50 border-t border-white/10 shrink-0">
                             <div className={`flex items-center gap-2 md:gap-3 bg-slate-800/80 rounded-xl md:rounded-2xl px-3 md:px-5 py-2 md:py-3 border transition-all shadow-2xl
     ${isSending ? 'opacity-70 border-white/5' : 'border-white/10 focus-within:border-blue-500/50'}`}>
 
