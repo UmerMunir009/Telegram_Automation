@@ -541,6 +541,67 @@ const joinGroup = asyncErrorHandler(async (req, res) => {
 
 
 
+
+
+
+
+
+
+
+const getAccountChats = asyncErrorHandler(async (req, res) => {
+    const { phone } = req.params;
+
+    const user = await User.findOne({
+        where: { phone: phone },
+        include: [{ model: Proxy, as: 'proxy' }]
+    });
+
+    if (!user || !user.sessionString) {
+        return res.status(404).json({ success: false, message: "Session not found" });
+    }
+
+    const client = new TelegramClient(
+        new StringSession(user.sessionString),
+        parseInt(process.env.TELEGRAM_API_ID),
+        process.env.TELEGRAM_API_HASH,
+        {
+            connectionRetries: 2,
+            proxy: user.proxy ? {
+                ip: user.proxy.host,
+                port: parseInt(user.proxy.port),
+                socksType: 5,
+                password: user.proxy.password,
+                username: user.proxy.username
+            } : null,
+        }
+    );
+
+    try {
+        await client.connect();
+        
+        const dialogs = await client.getDialogs({ limit: 50 });
+
+        const chats = dialogs.map(d => ({
+            id: d.id.toString(),
+            title: d.title,
+            timestamp: d.date,
+            lastMessage: d.message?.message?.substring(0, 50) || "Media/Attachment",
+            unreadCount: d.unreadCount,
+            isGroup: d.isGroup || d.isChannel
+        }));
+
+        await client.disconnect();
+        res.status(200).json({ success: true, chats });
+    } catch (err) {
+        if (client) await client.disconnect();
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+
+
+
 module.exports = {
     loginAccount,
     joinGroup,
@@ -550,5 +611,6 @@ module.exports = {
     stopJob,
     getLatestStatus,
     getJobDetails,
-    internalJoinLogic
+    internalJoinLogic,
+    getAccountChats
 };

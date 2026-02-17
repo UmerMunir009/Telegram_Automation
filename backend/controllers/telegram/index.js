@@ -12,6 +12,11 @@ router.post("/telegram/join/start", telegramServices.startJob);
 router.post("/telegram/join/stop", telegramServices.stopJob); 
 router.get("/telegram/join/status", telegramServices.getLatestStatus); 
 router.get("/telegram/join/job/:id", telegramServices.getJobDetails);
+
+
+
+router.get("/telegram/account/chats/:phone", telegramServices.getAccountChats);
+
  
 
 
