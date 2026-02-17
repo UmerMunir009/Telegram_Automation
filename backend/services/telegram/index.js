@@ -668,10 +668,22 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         
         let entity;
         try {
+            // 1. Try resolving as is (works for usernames or active dialogues)
             entity = await client.getEntity(chatId);
         } catch (e) {
-            const numericId = chatId.startsWith('-') ? chatId : chatId; 
-            entity = await client.getEntity(numericId);
+            console.log(`Fallback: Attempting BigInt resolution for ${chatId}`);
+            try {
+                // 2. Try converting to BigInt (required for many Group/Channel IDs)
+                entity = await client.getEntity(BigInt(chatId));
+            } catch (e2) {
+                // 3. Last resort: Fetch all dialogs to populate the session cache, then find it
+                const dialogs = await client.getDialogs({});
+                entity = dialogs.find(d => d.id.toString() === chatId.toString());
+            }
+        }
+
+        if (!entity) {
+            throw new Error("Could not find chat. Try sending a message there first.");
         }
 
         let allMessages = [];
@@ -705,7 +717,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         res.status(200).json({ success: true, count: history.length, history });
     } catch (err) {
         if (client) await client.disconnect();
-        console.error(`Detailed Error for ${chatId}:`, err);
+        console.error(`CRITICAL FETCH ERROR for ${chatId}:`, err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
