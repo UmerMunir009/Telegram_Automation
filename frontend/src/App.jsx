@@ -7,6 +7,7 @@ import List from './pages/List';
 import Order from './pages/Channel';
 import Nodes from './pages/Nodes';
 import Messages from './pages/Message';
+import ChatPortal from './pages/ChatPortal';
 import Login from './components/Login';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -130,6 +131,7 @@ const App = () => {
                   <Route path='/join-groups' element={<Order token={token} />} />
                   <Route path='/nodes' element={<Nodes token={token} />} />
                   <Route path='/message' element={<Messages token={token} />} />
+                  <Route path='/chat-portal' element={<ChatPortal token={token} />} />
                 </Routes>
               </div>
             </main>
