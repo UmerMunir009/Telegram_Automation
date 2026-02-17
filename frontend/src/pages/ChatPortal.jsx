@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { backendUrl } from '../App';
-import { Send, Zap, Loader2, ArrowLeft, Search, MoreVertical, Paperclip, Smile, X, CheckCheck, Waypoints } from 'lucide-react';
+import { Send, Zap, Loader2, ArrowLeft, Search, MoreVertical, Paperclip, Smile, X, CheckCheck, Waypoints, Check } from 'lucide-react';
 
 const ChatPortal = ({ token }) => {
     const [accounts, setAccounts] = useState([]);
@@ -95,6 +95,7 @@ const ChatPortal = ({ token }) => {
                     id: Date.now(),
                     text: inputMessage,
                     out: true,
+                    seen: false,
                     date: Math.floor(Date.now() / 1000)
                 }]);
                 setInputMessage("");
@@ -218,11 +219,25 @@ const ChatPortal = ({ token }) => {
                                     </div>
                                 ) : (
                                     messages.map((msg) => (
-                                        <div key={msg.id} className={`relative max-w-[80%] sm:max-w-[550px] p-3 px-4 rounded-2xl text-[15px] shadow-sm ${msg.out ? 'self-end bg-[#2b5278] text-white rounded-br-none bubble-out' : 'self-start bg-[#182533] text-white rounded-bl-none bubble-in'}`}>
+                                        <div
+                                            key={msg.id}
+                                            className={`relative max-w-[80%] sm:max-w-[550px] p-3 px-4 rounded-2xl text-[15px] shadow-sm 
+        ${msg.out
+                                                    ? 'self-end bg-[#2b5278] text-white rounded-br-none bubble-out'
+                                                    : 'self-start bg-[#182533] text-white rounded-bl-none bubble-in'}`}
+                                        >
                                             <div className="break-words pr-12 leading-relaxed">{msg.text}</div>
+
                                             <div className="text-[10px] text-white/40 absolute bottom-2 right-3 flex items-center gap-1">
                                                 {new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
-                                                {msg.out && <CheckCheck size={14} className="text-blue-400" />}
+
+                                                {msg.out && (
+                                                    msg.seen ? (
+                                                        <CheckCheck size={14} className="text-blue-400" />
+                                                    ) : (
+                                                        <Check size={14} className="text-gray-400" />
+                                                    )
+                                                )}
                                             </div>
                                         </div>
                                     ))

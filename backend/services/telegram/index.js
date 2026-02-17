@@ -690,7 +690,8 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
             text: m.message || "", 
             senderId: m.senderId ? m.senderId.toString() : (m.fromId?.userId?.toString() || "system"),
             date: m.date,
-            out: m.out
+            out: m.out,
+            seen: !m.unread
         }));
 
         await client.disconnect();
