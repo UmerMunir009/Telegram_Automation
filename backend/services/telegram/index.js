@@ -654,6 +654,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
     const { phone, chatId } = req.params;
 
     const user = await User.findOne({ where: { phone } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
     
     const client = new TelegramClient(
         new StringSession(user.sessionString),
@@ -665,7 +666,13 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
     try {
         await client.connect();
         
-        const entity = await client.getEntity(chatId);
+        let entity;
+        try {
+            entity = await client.getEntity(chatId);
+        } catch (e) {
+            const numericId = chatId.startsWith('-') ? chatId : chatId; 
+            entity = await client.getEntity(numericId);
+        }
 
         let allMessages = [];
         let lastId = 0;
@@ -698,10 +705,12 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         res.status(200).json({ success: true, count: history.length, history });
     } catch (err) {
         if (client) await client.disconnect();
-        console.error(`Error fetching messages for ${chatId}:`, err);
+        console.error(`Detailed Error for ${chatId}:`, err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
+
+
 const sendMessage = asyncErrorHandler(async (req, res) => {
     const { phone } = req.params;
     const { chatId, message } = req.body;
