@@ -63,7 +63,7 @@ const SideBar = () => {
             <div className="absolute inset-0 bg-blue-500/20 blur-lg rounded-full opacity-0 group-[.active]:opacity-100 transition-opacity" />
           </div>
 
-          <span className='text-sm font-medium tracking-wide'>M-Link Portal</span>
+          <span className='text-sm font-medium tracking-wide'>Telegram</span>
           <div className="absolute left-0 w-[2px] h-4 bg-blue-500 rounded-full opacity-0 group-[.active]:opacity-100 group-[.active]:shadow-[0_0_10px_#3b82f6] transition-all" />
         </NavLink>
       </div>

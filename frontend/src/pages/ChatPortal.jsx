@@ -1,20 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { backendUrl } from '../App';
-import { User, MessageSquare, Send, Zap, Loader2, ChevronLeft, ArrowLeft, Menu } from 'lucide-react';
+import { Send, Zap, Loader2, ArrowLeft, Search, MoreVertical, Paperclip, Smile, X, CheckCheck, Waypoints } from 'lucide-react';
 
 const ChatPortal = ({ token }) => {
     const [accounts, setAccounts] = useState([]);
     const [selectedAccount, setSelectedAccount] = useState(null);
     const [chats, setChats] = useState([]);
+    const [searchQuery, setSearchQuery] = useState("");
     const [selectedChat, setSelectedChat] = useState(null);
     const [selectedChatTitle, setSelectedChatTitle] = useState("");
     const [messages, setMessages] = useState([]);
     const [inputMessage, setInputMessage] = useState("");
+
     const [loading, setLoading] = useState({ accounts: false, chats: false, messages: false });
     const [isSending, setIsSending] = useState(false);
 
     const scrollRef = useRef(null);
+    const avatarColors = ['bg-orange-500', 'bg-blue-500', 'bg-red-400', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500'];
+
+    const filteredChats = chats.filter(chat =>
+        chat.title?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const filteredAccounts = accounts.filter(acc =>
+        acc.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        acc.phone?.includes(searchQuery)
+    );
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -29,10 +41,10 @@ const ChatPortal = ({ token }) => {
                 const res = await axios.get(`${backendUrl}/user/get`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (res.data.statusCode === 200 || res.data.success) {
+                if (res.data.success || res.data.statusCode === 200) {
                     setAccounts(res.data.data);
                 }
-            } catch (err) { console.error("Fetch Error:", err); }
+            } catch (err) { console.error(err); }
             setLoading(prev => ({ ...prev, accounts: false }));
         };
         fetchAccounts();
@@ -40,6 +52,7 @@ const ChatPortal = ({ token }) => {
 
     const fetchChats = async (phone) => {
         setSelectedAccount(phone);
+        setSearchQuery("");
         setChats([]);
         setSelectedChat(null);
         setLoading(prev => ({ ...prev, chats: true }));
@@ -53,7 +66,7 @@ const ChatPortal = ({ token }) => {
     };
 
     const fetchMessages = async (chat) => {
-        setMessages([])
+        setMessages([]);
         setSelectedChat(chat.id);
         setSelectedChatTitle(chat.title);
         setLoading(prev => ({ ...prev, messages: true }));
@@ -62,7 +75,10 @@ const ChatPortal = ({ token }) => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.data.success) setMessages(res.data.history.reverse());
-        } catch (err) { console.error(err); setMessages([]) }
+        } catch (err) {
+            console.error("Message Fetch Error:", err);
+            setMessages([]);
+        }
         setLoading(prev => ({ ...prev, messages: false }));
     };
 
@@ -83,196 +99,181 @@ const ChatPortal = ({ token }) => {
                 }]);
                 setInputMessage("");
             }
-        } catch (err) { console.error("Send Error:", err); } finally {
+        } catch (err) { console.error(err); } finally {
             setIsSending(false);
         }
     };
 
     return (
-        <div className="flex flex-col md:flex-row h-[85vh] md:h-[82vh] bg-slate-950/40 backdrop-blur-2xl border border-white/10 rounded-2xl md:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+        <div className="fixed inset-0 bg-[#0f0f0f] flex items-center justify-center overflow-hidden font-sans p-0 md:p-4">
+            <div className="flex w-full h-full md:max-w-[1400px] md:h-[85vh] bg-[#1c1c1c] text-white overflow-hidden md:rounded-xl shadow-2xl border border-white/5">
 
-            <div className={`
-                ${selectedChat ? 'hidden md:flex' : 'flex'} 
-                w-full md:w-[350px] lg:w-[400px] flex-col border-r border-white/5 bg-slate-900/20 h-full
-            `}>
-
-                <div className="p-4 md:p-5 border-b border-white/10 bg-white/5 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-3">
-                        {selectedAccount && (
-                            <button
-                                onClick={() => { setSelectedAccount(null); setChats([]); }}
-                                className="p-2 hover:bg-white/10 rounded-full transition-colors text-blue-400"
-                            >
-                                <ArrowLeft size={20} />
-                            </button>
-                        )}
-                        <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">
-                            {selectedAccount ? "Messages" : "Accounts"}
-                        </h2>
+                <div className={`${selectedChat ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[350px] lg:w-[400px] bg-[#1c1c1c] border-r border-white/10`}>
+                    <div className="p-4 border-b border-white/5 flex flex-col gap-4">
+                        <div className="flex items-center gap-2">
+                            {selectedAccount ? (
+                                <button onClick={() => { setSelectedAccount(null); setChats([]); }} className="p-2 hover:bg-white/5 rounded-full text-gray-400">
+                                    <ArrowLeft size={20} />
+                                </button>
+                            ) : (
+                                <div className="text-blue-500 font-bold text-lg flex items-center gap-2 px-2">
+                                    <Waypoints size={20} fill="currentColor" /> Telegram
+                                </div>
+                            )}
+                        </div>
+                        <div className="bg-[#242424] flex items-center px-4 py-2 rounded-lg border border-transparent focus-within:border-blue-500/50 transition-all">
+                            <Search size={18} className="text-gray-500 mr-3" />
+                            <input
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search"
+                                className="bg-transparent border-none outline-none text-sm w-full placeholder-gray-600"
+                            />
+                        </div>
                     </div>
-                    <div className="md:hidden">
-                        <Zap size={20} className="text-blue-500" />
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        {loading.accounts || loading.chats ? (
+                            <div className="flex flex-col items-center justify-center h-32 gap-3">
+                                <Loader2 className="animate-spin text-blue-500" size={24} />
+                                <span className="text-xs text-gray-500 font-medium">Fetching chats...</span>
+                            </div>
+                        ) : !selectedAccount ? (
+                            filteredAccounts.map((acc, i) => (
+                                <div key={acc.id} onClick={() => fetchChats(acc.phone)} className="flex items-center gap-4 px-5 py-4 hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5">
+                                    <div className={`w-12 h-12 rounded-full ${avatarColors[i % avatarColors.length]} flex items-center justify-center font-bold text-lg shrink-0`}>
+                                        {acc.name?.substring(0, 1).toUpperCase()}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-semibold truncate text-[15px]">{acc.name || "Unknown"}</h3>
+                                        <p className="text-[12px] text-gray-500 mt-0.5">{acc.phone}</p>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            filteredChats.map((chat, i) => (
+                                <div key={chat.id} onClick={() => fetchMessages(chat)} className={`flex items-center gap-4 px-5 py-3 cursor-pointer transition-all ${selectedChat === chat.id ? 'bg-[#3390ec]' : 'hover:bg-white/5'}`}>
+                                    <div className={`w-12 h-12 rounded-full ${selectedChat === chat.id ? 'bg-white/20' : avatarColors[i % avatarColors.length]} flex items-center justify-center font-bold text-lg shrink-0`}>
+                                        {chat.title?.substring(0, 1).toUpperCase()}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-baseline">
+                                            <h3 className="font-semibold truncate text-[15px]">{chat.title}</h3>
+                                            <span className={`text-[11px] ${selectedChat === chat.id ? 'text-white/70' : 'text-gray-500'}`}>18:45</span>
+                                        </div>
+                                        <div className="flex justify-between items-center mt-1">
+                                            <p className={`text-[13px] truncate flex-1 ${selectedChat === chat.id ? 'text-white/80' : 'text-gray-400'}`}>
+                                                {chat.lastMessage || "Media"}
+                                            </p>
+                                            {chat.unreadCount > 0 && selectedChat !== chat.id && (
+                                                <div className="ml-2 bg-[#31a54f] text-white text-[10px] font-bold min-w-[20px] h-[20px] flex items-center justify-center rounded-full px-1 shadow-sm">
+                                                    {chat.unreadCount}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar touch-pan-y">
-                    {!selectedAccount ? (
-                        <div className="p-3 md:p-4 grid grid-cols-1 gap-2 md:gap-3">
-                            {loading.accounts ? (
-                                <div className="flex justify-center p-10"><Loader2 className="animate-spin text-blue-400" /></div>
-                            ) : (
-                                accounts.map(acc => (
-                                    <div
-                                        key={acc.id}
-                                        onClick={() => fetchChats(acc.phone)}
-                                        className="group flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-xl md:rounded-2xl bg-slate-800/40 border border-white/5 hover:border-blue-500/50 hover:bg-slate-800 transition-all cursor-pointer"
-                                    >
-                                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white font-bold shadow-lg text-sm md:text-base">
-                                            {acc.name?.substring(0, 2).toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 overflow-hidden">
-                                            <p className="text-slate-100 font-semibold truncate">{acc.name || "Unknown"}</p>
-                                            <p className="text-[10px] md:text-xs text-slate-500 font-mono truncate">{acc.phone}</p>
-                                        </div>
-                                        <ChevronLeft size={16} className="text-slate-600 group-hover:text-blue-400 rotate-180 transition-colors" />
+                <div className={`${!selectedChat ? 'hidden md:flex' : 'flex'} flex-1 flex-col relative bg-[#0e1621]`}>
+                    {selectedChat ? (
+                        <>
+                            <div className="h-[65px] bg-[#1c1c1c] border-b border-white/10 flex items-center justify-between px-6 shrink-0 z-20 shadow-md">
+                                <div className="flex items-center gap-4 overflow-hidden">
+                                    <button onClick={() => setSelectedChat(null)} className="md:hidden p-2 text-gray-400 hover:bg-white/5 rounded-full">
+                                        <ArrowLeft size={22} />
+                                    </button>
+                                    <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center font-bold shrink-0">
+                                        {selectedChatTitle?.substring(0, 1).toUpperCase()}
                                     </div>
-                                ))
-                            )}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col min-h-full">
-                            {loading.chats ? (
-                                <div className="flex flex-col items-center justify-center p-10 gap-3">
-                                    <Loader2 className="animate-spin text-blue-400" />
-                                    <span className="text-[10px] text-slate-500 uppercase tracking-widest">Syncing Cloud...</span>
+                                    <div className="truncate">
+                                        <h3 className="font-bold text-[16px] truncate leading-tight">{selectedChatTitle}</h3>
+                                    </div>
                                 </div>
-                            ) : (
-                                chats.map(chat => (
-                                    <div
-                                        key={chat.id}
-                                        onClick={() => fetchMessages(chat)}
-                                        className={`p-3 md:p-4 cursor-pointer border-b border-white/5 transition-all flex flex-col gap-0.5 md:gap-1
-                                        ${selectedChat === chat.id ? 'bg-blue-600/20 border-l-4 border-l-blue-400' : 'hover:bg-white/5'}`}
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <span className="font-bold text-sm md:text-base text-slate-200 truncate pr-2">{chat.title}</span>
-                                            {chat.unreadCount > 0 && (
-                                                <span className="bg-blue-500 text-white text-[9px] md:text-[10px] px-1.5 py-0.5 rounded-full">{chat.unreadCount}</span>
-                                            )}
+                                <div className="flex gap-2">
+                                    <button className="p-2.5 text-gray-400 hover:bg-white/10 rounded-full"><Search size={20} /></button>
+                                    <button className="p-2.5 text-gray-400 hover:bg-white/10 rounded-full"><MoreVertical size={20} /></button>
+                                </div>
+                            </div>
+
+                            <div
+                                ref={scrollRef}
+                                className="flex-1 overflow-y-auto p-6 flex flex-col gap-2 relative"
+                                style={{
+                                    backgroundImage: `url('https://i.pinimg.com/originals/85/70/f6/8570f6339d318933fa3068d60239611e.jpg')`,
+                                    backgroundBlendMode: 'soft-light',
+                                    backgroundSize: '500px',
+                                    backgroundColor: '#0e1621'
+                                }}
+                            >
+                                {loading.messages ? (
+                                    <div className="flex flex-col items-center justify-center h-full gap-4">
+                                        <div className="p-4 bg-[#1c1c1c]/90 rounded-2xl shadow-2xl border border-white/5">
+                                            <Loader2 className="animate-spin text-blue-500" size={32} />
                                         </div>
-                                        <p className="text-[11px] md:text-xs text-slate-500 truncate italic">{chat.lastMessage}</p>
+                                        <span className="text-sm font-medium text-white/50 tracking-wide">Loading history...</span>
                                     </div>
-                                ))
-                            )}
+                                ) : (
+                                    messages.map((msg) => (
+                                        <div key={msg.id} className={`relative max-w-[80%] sm:max-w-[550px] p-3 px-4 rounded-2xl text-[15px] shadow-sm ${msg.out ? 'self-end bg-[#2b5278] text-white rounded-br-none bubble-out' : 'self-start bg-[#182533] text-white rounded-bl-none bubble-in'}`}>
+                                            <div className="break-words pr-12 leading-relaxed">{msg.text}</div>
+                                            <div className="text-[10px] text-white/40 absolute bottom-2 right-3 flex items-center gap-1">
+                                                {new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                                {msg.out && <CheckCheck size={14} className="text-blue-400" />}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="bg-[#1c1c1c] p-4 flex justify-center border-t border-white/5">
+                                <div className="max-w-[900px] w-full flex items-center gap-4">
+                                    <div className="flex-1 bg-[#242424] rounded-xl flex items-center px-4 py-1">
+                                        <button className="p-2 text-gray-500 hover:text-blue-500"><Smile size={24} /></button>
+                                        <textarea
+                                            rows="1"
+                                            value={inputMessage}
+                                            disabled={isSending || loading.messages}
+                                            onChange={(e) => setInputMessage(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                                            placeholder="Type a message..."
+                                            className="bg-transparent flex-1 outline-none text-[15px] py-3 px-2 resize-none max-h-[120px] text-white placeholder-gray-600"
+                                        />
+                                        <button className="p-2 text-gray-500 hover:text-blue-500"><Paperclip size={22} /></button>
+                                    </div>
+                                    <button
+                                        onClick={handleSendMessage}
+                                        disabled={isSending || !inputMessage.trim() || loading.messages}
+                                        className="w-12 h-12 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center transition-transform active:scale-90 shadow-lg shrink-0 disabled:opacity-50"
+                                    >
+                                        {isSending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} className="ml-1" />}
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center bg-[#111921]">
+                            <div className="bg-[#229ED9] p-3 rounded-full inline-flex items-center justify-center shadow-xl">
+                                <Waypoints size={32} color="white" strokeWidth={2.5} style={{ transform: 'rotate(-10deg) translateX(2px)' }} />
+                            </div>
+                            <h2 className="text-xl font-bold mb-2 mt-4">Welcome to Telegram</h2>
+                            <p className="text-gray-500 text-sm text-center">Select an account and a conversation from the left<br />to start managing your messages.</p>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className={`
-                ${!selectedChat ? 'hidden md:flex' : 'flex'} 
-                flex-1 flex-col bg-gradient-to-br from-slate-900 to-[#020617] relative h-full
-            `}>
-                {selectedChat ? (
-                    <>
-                        <div className="p-4 md:p-5 border-b border-white/10 bg-white/5 backdrop-blur-xl flex items-center justify-between shrink-0">
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() => setSelectedChat(null)}
-                                    className="md:hidden p-2 -ml-2 hover:bg-white/10 rounded-full transition-colors text-blue-400"
-                                >
-                                    <ArrowLeft size={20} />
-                                </button>
-                                <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 border border-blue-500/30 font-bold text-sm md:text-base">
-                                    {selectedChatTitle.substring(0, 1)}
-                                </div>
-                                <div className="overflow-hidden">
-                                    <h3 className="text-white font-bold leading-none truncate text-sm md:text-base">{selectedChatTitle}</h3>
-                                    <span className="hidden sm:inline-block text-[9px] md:text-[10px] text-blue-400 uppercase tracking-widest font-bold mt-1">Encrypted Connection</span>
-                                </div>
-                            </div>
-                            <button onClick={() => setSelectedChat(null)} className="hidden md:block text-slate-500 hover:text-white transition-colors">
-                                <ArrowLeft size={18} />
-                            </button>
-                        </div>
-
-                        <div
-                            ref={scrollRef}
-                            className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-3 md:gap-4 custom-scrollbar touch-pan-y"
-                            style={{ backgroundImage: `url('https://www.transparenttextures.com/patterns/carbon-fibre.png')`, backgroundAttachment: 'fixed' }}
-                        >
-                            {loading.messages ? (
-                                <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-blue-500" /></div>
-                            ) : (
-                                messages.map(msg => (
-                                    <div
-                                        key={msg.id}
-                                        className={`max-w-[85%] md:max-w-[75%] p-3 md:p-4 rounded-xl md:rounded-3xl text-[13px] md:text-sm leading-relaxed shadow-xl border
-                    ${msg.out
-                                                ? 'self-end bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-none border-blue-400/30'
-                                                : 'self-start bg-slate-800 text-slate-200 rounded-tl-none border-white/5'}`}
-                                    >
-                                        {msg.text}
-                                        <div className={`text-[8px] md:text-[9px] mt-1.5 md:mt-2 opacity-60 flex items-center gap-1 ${msg.out ? 'justify-end' : 'justify-start'}`}>
-                                            {new Date(msg.date * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        <div className="p-4 md:p-6 bg-slate-950/50 border-t border-white/10 shrink-0">
-                            <div className={`flex items-center gap-2 md:gap-3 bg-slate-800/80 rounded-xl md:rounded-2xl px-3 md:px-5 py-2 md:py-3 border transition-all shadow-2xl
-    ${isSending ? 'opacity-70 border-white/5' : 'border-white/10 focus-within:border-blue-500/50'}`}>
-
-                                <input
-                                    type="text"
-                                    value={inputMessage}
-                                    disabled={isSending}
-                                    onChange={(e) => setInputMessage(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                                    placeholder={isSending ? "Sending..." : "Type a message..."}
-                                    className="bg-transparent flex-1 outline-none text-[13px] md:text-sm text-slate-200 placeholder-slate-500 disabled:cursor-not-allowed"
-                                />
-
-                                <button
-                                    onClick={handleSendMessage}
-                                    disabled={isSending || !inputMessage.trim()}
-                                    className={`p-2 md:p-3 rounded-lg md:rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center
-        ${isSending || !inputMessage.trim()
-                                            ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                                            : 'bg-blue-500 text-white hover:bg-blue-400 hover:scale-105 shadow-blue-500/20'}`}
-                                >
-                                    {isSending ? (
-                                        <Loader2 size={16} className="animate-spin md:w-[18px] md:h-[18px]" />
-                                    ) : (
-                                        <Send size={16} className="md:w-[18px] md:h-[18px]" />
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </>
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-center p-6 md:p-10">
-                        <div className="relative mb-6 md:mb-8">
-                            <div className="absolute inset-0 bg-blue-500/20 blur-[60px] md:blur-[100px] rounded-full"></div>
-                            <div className="relative w-20 h-20 md:w-28 md:h-28 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-2xl md:rounded-[2rem] flex items-center justify-center shadow-2xl rotate-12">
-                                <Zap size={40} className="text-white md:size-14 -rotate-12 animate-pulse" />
-                            </div>
-                        </div>
-                        <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4 tracking-tight">
-                            M-Link <span className="text-blue-500">Chat Center</span>
-                        </h2>
-                        <p className="text-slate-400 text-sm md:text-lg max-w-sm leading-relaxed mb-6 md:mb-8">
-                            Select an account and conversation to manage live cloud dialogs.
-                        </p>
-                        <div className="hidden sm:flex gap-4">
-                            <div className="px-4 py-2 rounded-full border border-white/5 bg-white/5 text-[10px] text-slate-500 uppercase tracking-tighter">MTProto Secure</div>
-                            <div className="px-4 py-2 rounded-full border border-white/5 bg-white/5 text-[10px] text-slate-500 uppercase tracking-tighter">Multi-Session</div>
-                        </div>
-                    </div>
-                )}
-            </div>
+            <style>{`
+                .bubble-out::after { content: ''; position: absolute; right: -8px; bottom: 0; width: 0; height: 0; border-left: 10px solid #2b5278; border-top: 10px solid transparent; }
+                .bubble-in::after { content: ''; position: absolute; left: -8px; bottom: 0; width: 0; height: 0; border-right: 10px solid #182533; border-top: 10px solid transparent; }
+                .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #444; }
+            `}</style>
         </div>
     );
 };
