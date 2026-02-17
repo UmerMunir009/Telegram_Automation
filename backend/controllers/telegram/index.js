@@ -16,6 +16,8 @@ router.get("/telegram/join/job/:id", telegramServices.getJobDetails);
 
 
 router.get("/telegram/account/chats/:phone", telegramServices.getAccountChats);
+router.get("/telegram/chat/messages/:phone/:chatId", telegramServices.getChatMessages);
+router.post("/telegram/chat/send/:phone", telegramServices.sendMessage);
 
  
 

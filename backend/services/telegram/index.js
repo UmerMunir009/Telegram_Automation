@@ -579,15 +579,17 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
     try {
         await client.connect();
         
-        const dialogs = await client.getDialogs({ limit: 50 });
+        const dialogs = await client.getDialogs({});
 
         const chats = dialogs.map(d => ({
             id: d.id.toString(),
-            title: d.title,
+            title: d.title || "Unknown",
             timestamp: d.date,
-            lastMessage: d.message?.message?.substring(0, 50) || "Media/Attachment",
+            lastMessage: d.message?.message || "Media",
             unreadCount: d.unreadCount,
-            isGroup: d.isGroup || d.isChannel
+            isGroup: d.isGroup,
+            isChannel: d.isChannel,
+            isUser: d.isUser
         }));
 
         await client.disconnect();
@@ -598,6 +600,109 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
     }
 });
 
+const getChatMessages = asyncErrorHandler(async (req, res) => {
+    const { phone, chatId } = req.params;
+
+    const user = await User.findOne({ where: { phone } });
+    
+    const client = new TelegramClient(
+        new StringSession(user.sessionString),
+        parseInt(process.env.TELEGRAM_API_ID),
+        process.env.TELEGRAM_API_HASH,
+        { connectionRetries: 5 }
+    );
+
+    try {
+        await client.connect();
+        
+        let allMessages = [];
+        let lastId = 0;
+        const CHUNK_SIZE = 100; 
+
+        while (true) {
+            const msgs = await client.getMessages(chatId, {
+                limit: CHUNK_SIZE,
+                offsetId: lastId
+            });
+
+            if (!msgs || msgs.length === 0) break;
+
+            allMessages.push(...msgs);
+            lastId = msgs[msgs.length - 1].id;
+
+            if (allMessages.length > 5000) break; 
+        }
+
+        const history = allMessages.map(m => ({
+            id: m.id,
+            text: m.message,
+            senderId: m.fromId?.toString(),
+            date: m.date,
+            out: m.out
+        }));
+
+        await client.disconnect();
+        res.status(200).json({ success: true, count: history.length, history });
+    } catch (err) {
+        if (client) await client.disconnect();
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+const sendMessage = asyncErrorHandler(async (req, res) => {
+    const { phone } = req.params;
+    const { chatId, message } = req.body;
+
+    if (!chatId || !message) {
+        return res.status(400).json({ success: false, message: "chatId and message are required" });
+    }
+
+    const user = await User.findOne({
+        where: { phone: phone },
+        include: [{ model: Proxy, as: 'proxy' }]
+    });
+
+    if (!user || !user.sessionString) {
+        return res.status(404).json({ success: false, message: "Session not found" });
+    }
+
+    const client = new TelegramClient(
+        new StringSession(user.sessionString),
+        parseInt(process.env.TELEGRAM_API_ID),
+        process.env.TELEGRAM_API_HASH,
+        {
+            connectionRetries: 5,
+            proxy: user.proxy ? {
+                ip: user.proxy.host,
+                port: parseInt(user.proxy.port),
+                socksType: 5,
+                password: user.proxy.password,
+                username: user.proxy.username
+            } : null,
+        }
+    );
+
+    try {
+        await client.connect();
+
+        const result = await client.sendMessage(chatId, { message: message });
+
+        await client.disconnect();
+
+        res.status(200).json({
+            success: true,
+            message: "Message sent successfully",
+            sentMessage: {
+                id: result.id,
+                text: result.message,
+                date: result.date
+            }
+        });
+    } catch (err) {
+        if (client) await client.disconnect();
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 
 
@@ -612,5 +717,7 @@ module.exports = {
     getLatestStatus,
     getJobDetails,
     internalJoinLogic,
-    getAccountChats
+    getAccountChats,
+    getChatMessages,
+    sendMessage
 };
