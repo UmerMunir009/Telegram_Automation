@@ -53,6 +53,7 @@ const ChatPortal = ({ token }) => {
     };
 
     const fetchMessages = async (chat) => {
+        setMessages([])
         setSelectedChat(chat.id);
         setSelectedChatTitle(chat.title);
         setLoading(prev => ({ ...prev, messages: true }));
@@ -61,7 +62,7 @@ const ChatPortal = ({ token }) => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.data.success) setMessages(res.data.history.reverse());
-        } catch (err) { console.error(err); }
+        } catch (err) { console.error(err); setMessages([]) }
         setLoading(prev => ({ ...prev, messages: false }));
     };
 
