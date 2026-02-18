@@ -5,4 +5,8 @@ const joinQueue = new Queue('telegram-join-queue', {
     connection: redisConnection 
 });
 
-module.exports = { joinQueue };
+const messageQueue = new Queue('telegram-message-queue', { 
+    connection: redisConnection 
+});
+
+module.exports = { joinQueue ,messageQueue};

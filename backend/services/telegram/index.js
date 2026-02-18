@@ -1,10 +1,10 @@
 const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
-const { Proxy, User, JoinJob } = require("../../models");
+const { Proxy, User, JoinJob,MessageJob } = require("../../models");
 const { STATUS_CODES } = require("../../config/constants");
 const asyncErrorHandler = require("../../utils/asyncErrorHandler");
 const { Api } = require("telegram");
-const { joinQueue } = require("../../services/telegram/queue.service");
+const { joinQueue ,messageQueue} = require("../../services/telegram/queue.service");
 
 const activeClients = {};
 
@@ -735,6 +735,79 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
 
 
 
+
+
+
+
+
+
+
+const startMessageJob = asyncErrorHandler(async (req, res) => {
+    const { senderIds, targets, message, delay } = req.body;
+
+    if (!senderIds?.length || !targets?.length || !message) {
+        return res.status(STATUS_CODES.REQUIRED).json({ success: false, message: "Senders, targets, and message are required." });
+    }
+
+    const dbJob = await MessageJob.create({
+        total: targets.length,
+        message: message,
+        targets: targets,
+        senderIds: senderIds,
+        delay: delay || 10,
+        status: 'running',
+        logs: [{
+            timestamp: new Date().toLocaleTimeString(),
+            msg: `Campaign initialized with ${targets.length} targets.`,
+            type: 'info'
+        }]
+    });
+
+    const bullJob = await messageQueue.add('message-task', {
+        dbJobId: dbJob.id,
+        senderIds,
+        targets,
+        message,
+        delay: delay || 10
+    });
+
+    await dbJob.update({ bullJobId: bullJob.id });
+
+    res.status(STATUS_CODES.SUCCESS).json({ success: STATUS_CODES.SUCCESS, jobId: dbJob.id });
+});
+
+
+const stopMessageJob = asyncErrorHandler(async (req, res) => {
+    const { id } = req.body; 
+    const job = await MessageJob.findByPk(id);
+
+    if (!job) return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Job not found" });
+
+    await job.update({ status: 'stopped' });
+    
+    res.status(STATUS_CODES.SUCCESS).json({ 
+        success: true, 
+        message: "Stop signal sent to background worker." 
+    });
+});
+
+const getAllMessageJobs = asyncErrorHandler(async (req, res) => {
+    const jobs = await MessageJob.findAll({
+        order: [['created', 'DESC']],
+        limit: 50 
+    });
+    res.status(200).json({ success: true, data: jobs });
+});
+
+const getMessageJobDetails = asyncErrorHandler(async (req, res) => {
+    const job = await MessageJob.findByPk(req.params.id);
+    if (!job) return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Job not found" });
+    res.status(STATUS_CODES.SUCCESS).json({ success: STATUS_CODES.SUCCESS, data: job });
+});
+
+
+
+
 module.exports = {
     loginAccount,
     joinGroup,
@@ -747,5 +820,9 @@ module.exports = {
     internalJoinLogic,
     getAccountChats,
     getChatMessages,
-    sendMessage
+    sendMessage,
+    startMessageJob,
+    stopMessageJob,
+    getAllMessageJobs,
+    getMessageJobDetails
 };
