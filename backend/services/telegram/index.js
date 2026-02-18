@@ -712,7 +712,23 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
 
     try {
         await client.connect();
-        const entity = await client.getEntity(chatId);
+        let entity;
+        try {
+            entity = await client.getEntity(chatId);
+        } catch (e) {
+            console.log(`[Send] Fallback: Attempting BigInt resolution for ${chatId}`);
+            try {
+                entity = await client.getEntity(BigInt(chatId));
+            } catch (e2) {
+                console.log(`[Send] Fallback: Searching Dialogs for ${chatId}`);
+                const dialogs = await client.getDialogs({});
+                entity = dialogs.find(d => d.id.toString() === chatId.toString());
+            }
+        }
+
+        if (!entity) {
+            throw new Error("Could not resolve chat entity. Ensure the ID is correct.");
+        }
 
         const result = await client.sendMessage(entity, { message: message });
 
