@@ -10,6 +10,8 @@ const globalErrorHandler = require("./controllers/error/errorController");
 const app = express();
 
 require('./services/telegram/join.worker');
+require('./services/telegram/message.worker');
+
 
 
 app.use(cors({
