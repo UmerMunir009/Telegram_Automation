@@ -14,12 +14,15 @@ const Messages = ({ token }) => {
     const [receiverHandlesRaw, setReceiverHandlesRaw] = useState('');
     const [messageText, setMessageText] = useState('');
     const [delaySeconds, setDelaySeconds] = useState(10); 
-    
     const [campaigns, setCampaigns] = useState([]);
-    const stopSignals = useRef({});
 
     useEffect(() => {
         fetchAccounts();
+        fetchAllCampaigns();
+
+        // Poll for updates every 3 seconds
+        const interval = setInterval(fetchAllCampaigns, 3000);
+        return () => clearInterval(interval);
     }, []);
 
     const fetchAccounts = async () => {
@@ -36,13 +39,17 @@ const Messages = ({ token }) => {
         }
     };
 
-    const addCampaignLog = (campaignId, msg, type = 'info') => {
-        const timestamp = new Date().toLocaleTimeString([], { hour12: false });
-        setCampaigns(prev => prev.map(c => 
-            c.id === campaignId 
-            ? { ...c, logs: [...c.logs, { timestamp, msg, type }] } 
-            : c
-        ));
+    const fetchAllCampaigns = async () => {
+        try {
+            const response = await axios.get(`${backendUrl}/telegram/messages/all`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.data.success) {
+                setCampaigns(response.data.data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch campaigns", error);
+        }
     };
 
     const toggleSender = (id) => {
@@ -51,14 +58,18 @@ const Messages = ({ token }) => {
         );
     };
 
-    const handleStopCampaign = (id) => {
-        stopSignals.current[id] = true;
-        addCampaignLog(id, "STOP SIGNAL RECEIVED. Ending deployment...", "error");
-    };
-
-    const removeCampaign = (id) => {
-        setCampaigns(prev => prev.filter(c => c.id !== id));
-        delete stopSignals.current[id];
+    const handleStopCampaign = async (id) => {
+        try {
+            const response = await axios.post(`${backendUrl}/telegram/messages/stop`, { id }, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.data.success) {
+                toast.info("Stop signal sent to worker");
+                fetchAllCampaigns();
+            }
+        } catch (error) {
+            toast.error("Failed to stop campaign");
+        }
     };
 
     const startNewCampaign = async () => {
@@ -72,73 +83,27 @@ const Messages = ({ token }) => {
             return;
         }
 
-        const campaignId = Date.now();
-        stopSignals.current[campaignId] = false;
+        try {
+            const payload = {
+                senderIds: selectedSenderIds,
+                targets: handles,
+                message: messageText,
+                delay: delaySeconds
+            };
 
-        const newCampaign = {
-            id: campaignId,
-            timestamp: new Date().toLocaleTimeString(),
-            targets: handles,
-            senderIds: [...selectedSenderIds], 
-            message: messageText,
-            current: 0,
-            total: handles.length,
-            logs: [{ timestamp: new Date().toLocaleTimeString([], { hour12: false }), msg: "Campaign Initialized", type: 'info' }],
-            status: 'running'
-        };
+            const response = await axios.post(`${backendUrl}/telegram/messages/start`, payload, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
 
-        setCampaigns(prev => [newCampaign, ...prev]);
-        
-        setReceiverHandlesRaw('');
-        setMessageText('');
-
-        runDeployment(newCampaign);
-    };
-
-    const runDeployment = async (campaign) => {
-        const { id, targets, senderIds, message } = campaign;
-
-        for (let i = 0; i < targets.length; i++) {
-            if (stopSignals.current[id]) break;
-
-            const targetHandle = targets[i];
-            const senderId = senderIds[i % senderIds.length];
-            const senderAcc = accounts.find(a => a.id === senderId);
-            const senderName = senderAcc?.name || senderAcc?.phone || "Node";
-
-            try {
-                addCampaignLog(id, `Sending to ${targetHandle} via node (${senderName})`, "info");
-                
-                const response = await axios.post(`${backendUrl}/telegram/send-message`, {
-                    targetHandle: targetHandle,
-                    message: message,
-                    senderId: senderId
-                }, { headers: { 'Authorization': `Bearer ${token}` } });
-
-                if (response.data.success) {
-                    addCampaignLog(id, `[OK] Delivered to ${targetHandle}`, "success");
-                }
-            } catch (error) {
-                const errorMsg = error.response?.data?.message || "Internal Error";
-                
-                if (errorMsg.includes("PEER_FLOOD")) {
-                    addCampaignLog(id, `[FAIL] ${targetHandle}: PEER_FLOOD (Account restricted/Privacy settings)`, "error");
-                } else {
-                    addCampaignLog(id, `[FAIL] ${targetHandle}: ${errorMsg}`, "error");
-                }
+            if (response.data.success) {
+                toast.success("Campaign pushed to background worker");
+                setReceiverHandlesRaw('');
+                setMessageText('');
+                fetchAllCampaigns();
             }
-
-            setCampaigns(prev => prev.map(c => c.id === id ? { ...c, current: i + 1 } : c));
-
-            if (i < targets.length - 1 && !stopSignals.current[id]) {
-                const jitter = Math.floor(Math.random() * (delaySeconds * 0.4)) - (delaySeconds * 0.2);
-                const finalDelay = Math.max(1, delaySeconds + jitter);
-                await new Promise(resolve => setTimeout(resolve, finalDelay * 1000));
-            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Failed to start campaign");
         }
-
-        addCampaignLog(id, "DEPLOYMENT SEQUENCE FINISHED.", "info");
-        setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: 'finished' } : c));
     };
 
     return (
@@ -227,9 +192,9 @@ const Messages = ({ token }) => {
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <span className={`w-2 h-2 rounded-full ${camp.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`} />
-                                        <h3 className="font-black text-white text-sm uppercase tracking-tight">Campaign_{camp.id}</h3>
+                                        <h3 className="font-black text-white text-sm uppercase tracking-tight">Campaign_{camp.id.substring(0,8)}</h3>
                                     </div>
-                                    <p className="text-[10px] text-slate-500 mt-1">Launched at {camp.timestamp} • {camp.senderIds.length} Nodes</p>
+                                    <p className="text-[10px] text-slate-500 mt-1">Created: {new Date(camp.created).toLocaleString()} • {camp.senderIds?.length} Nodes</p>
                                 </div>
                                 <div className="flex gap-2">
                                     {camp.status === 'running' && (
@@ -237,9 +202,6 @@ const Messages = ({ token }) => {
                                             <Square size={16} fill="currentColor" />
                                         </button>
                                     )}
-                                    <button onClick={() => removeCampaign(camp.id)} className="p-2 bg-white/5 text-slate-500 rounded-xl hover:text-white">
-                                        <Trash2 size={16} />
-                                    </button>
                                 </div>
                             </div>
 
@@ -250,14 +212,14 @@ const Messages = ({ token }) => {
                                 </div>
                                 <div className="h-2 bg-black rounded-full overflow-hidden">
                                     <div 
-                                        className={`h-full transition-all duration-700 ${camp.status === 'finished' ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                        className={`h-full transition-all duration-700 ${camp.status === 'completed' ? 'bg-emerald-500' : 'bg-blue-600'}`}
                                         style={{ width: `${(camp.current / camp.total) * 100}%` }}
                                     />
                                 </div>
                             </div>
 
                             <div className="bg-black/50 rounded-2xl p-4 h-40 overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar">
-                                {camp.logs.map((log, idx) => (
+                                {camp.logs?.map((log, idx) => (
                                     <div key={idx} className="flex gap-2 border-l border-white/5 pl-2">
                                         <span className="text-slate-600 shrink-0">[{log.timestamp}]</span>
                                         <span className={log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-emerald-400' : 'text-blue-400'}>
