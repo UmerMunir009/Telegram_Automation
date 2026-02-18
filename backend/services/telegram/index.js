@@ -1,10 +1,10 @@
 const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
-const { Proxy, User, JoinJob,MessageJob } = require("../../models");
+const { Proxy, User, JoinJob, MessageJob } = require("../../models");
 const { STATUS_CODES } = require("../../config/constants");
 const asyncErrorHandler = require("../../utils/asyncErrorHandler");
 const { Api } = require("telegram");
-const { joinQueue ,messageQueue} = require("../../services/telegram/queue.service");
+const { joinQueue, messageQueue } = require("../../services/telegram/queue.service");
 
 const activeClients = {};
 
@@ -391,7 +391,7 @@ const internalJoinLogic = async (phone, channelUrl) => {
             socksType: 5,
             password: user.proxy.password,
             username: user.proxy.username,
-            timeout: 10000 
+            timeout: 10000
         };
     } else {
         console.log(`[${phone}] ⚠️ No Proxy - Connecting Direct`);
@@ -402,19 +402,19 @@ const internalJoinLogic = async (phone, channelUrl) => {
         parseInt(process.env.TELEGRAM_API_ID),
         process.env.TELEGRAM_API_HASH,
         {
-            connectionRetries: 1, 
+            connectionRetries: 1,
             proxy: proxyOptions,
             deviceModel: "Automation Core v1",
             receiveUpdates: false,
-            autoReconnect: false, 
-            timeout: 30000, 
-            baseLogger: null 
+            autoReconnect: false,
+            timeout: 30000,
+            baseLogger: null
         }
     );
 
     try {
         console.log(`[${phone}] 🔄 Connecting to Telegram Network...`);
-        
+
         await client.connect();
 
         if (client._updateLoop) client._updateLoop = false;
@@ -441,16 +441,16 @@ const internalJoinLogic = async (phone, channelUrl) => {
         if (msg.includes("Authentication failed")) throw new Error("Proxy Credentials Invalid");
         if (msg.includes("AUTH_KEY_UNREGISTERED")) throw new Error("Session Expired - Re-login Required");
         if (msg.includes("FLOOD_WAIT")) throw new Error("Rate Limit Hit (Flood Wait)");
-        
+
         if (msg.includes("Timeout")) throw new Error("Connection timed out (Proxy too slow)");
 
         throw err;
     } finally {
         if (client) {
-            try { 
+            try {
                 await client.disconnect();
-                client.destroy(); 
-            } catch (e) {}
+                client.destroy();
+            } catch (e) { }
         }
     }
 };
@@ -481,7 +481,7 @@ const startJob = asyncErrorHandler(async (req, res) => {
 
     const bullJob = await joinQueue.add('join-task', {
         dbJobId: dbJob.id,
-        accounts: accounts, 
+        accounts: accounts,
         urls: urls,
         delay: delay
     });
@@ -578,7 +578,7 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
 
     try {
         await client.connect();
-        
+
         const dialogs = await client.getDialogs({});
 
         const chats = dialogs.map(d => ({
@@ -608,7 +608,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
 
     const user = await User.findOne({ where: { phone } });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    
+
     const client = new TelegramClient(
         new StringSession(user.sessionString),
         parseInt(process.env.TELEGRAM_API_ID),
@@ -618,7 +618,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
 
     try {
         await client.connect();
-        
+
         let entity;
         try {
             entity = await client.getEntity(chatId);
@@ -642,7 +642,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
 
         let allMessages = [];
         let lastId = 0;
-        const CHUNK_SIZE = 100; 
+        const CHUNK_SIZE = 100;
 
         while (true) {
             const msgs = await client.getMessages(entity, {
@@ -655,12 +655,12 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
             allMessages.push(...msgs);
             lastId = msgs[msgs.length - 1].id;
 
-            if (allMessages.length >= 1000) break; 
+            if (allMessages.length >= 1000) break;
         }
 
         const history = allMessages.map(m => ({
             id: m.id,
-            text: m.message || "", 
+            text: m.message || "",
             senderId: m.senderId ? m.senderId.toString() : (m.fromId?.userId?.toString() || "system"),
             date: m.date,
             out: m.out,
@@ -712,8 +712,10 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
 
     try {
         await client.connect();
+        const entity = await client.getEntity(chatId);
 
-        const result = await client.sendMessage(chatId, { message: message });
+        const result = await client.sendMessage(entity, { message: message });
+
 
         await client.disconnect();
 
@@ -778,23 +780,23 @@ const startMessageJob = asyncErrorHandler(async (req, res) => {
 
 
 const stopMessageJob = asyncErrorHandler(async (req, res) => {
-    const { id } = req.body; 
+    const { id } = req.body;
     const job = await MessageJob.findByPk(id);
 
     if (!job) return res.status(STATUS_CODES.BAD_REQUEST).json({ success: false, message: "Job not found" });
 
     await job.update({ status: 'stopped' });
-    
-    res.status(STATUS_CODES.SUCCESS).json({ 
-        success: true, 
-        message: "Stop signal sent to background worker." 
+
+    res.status(STATUS_CODES.SUCCESS).json({
+        success: true,
+        message: "Stop signal sent to background worker."
     });
 });
 
 const getAllMessageJobs = asyncErrorHandler(async (req, res) => {
     const jobs = await MessageJob.findAll({
         order: [['created', 'DESC']],
-        limit: 50 
+        limit: 50
     });
     res.status(200).json({ success: true, data: jobs });
 });
