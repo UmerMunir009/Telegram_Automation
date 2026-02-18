@@ -92,11 +92,11 @@ const ChatPortal = ({ token }) => {
             );
             if (res.data.success) {
                 setMessages(prev => [...prev, {
-                    id: Date.now(),
+                    id: res.data.sentMessage.id,
                     text: inputMessage,
                     out: true,
-                    seen: false,
-                    date: Math.floor(Date.now() / 1000)
+                    seen: false, 
+                    date: res.data.sentMessage.date
                 }]);
                 setInputMessage("");
             }
@@ -104,6 +104,8 @@ const ChatPortal = ({ token }) => {
             setIsSending(false);
         }
     };
+
+
 
     return (
         <div className="fixed inset-0 bg-[#0f0f0f] flex items-center justify-center overflow-hidden font-sans p-0 md:p-4">

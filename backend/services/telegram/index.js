@@ -600,54 +600,7 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
     }
 });
 
-// const getChatMessages = asyncErrorHandler(async (req, res) => {
-//     const { phone, chatId } = req.params;
 
-//     const user = await User.findOne({ where: { phone } });
-    
-//     const client = new TelegramClient(
-//         new StringSession(user.sessionString),
-//         parseInt(process.env.TELEGRAM_API_ID),
-//         process.env.TELEGRAM_API_HASH,
-//         { connectionRetries: 5 }
-//     );
-
-//     try {
-//         await client.connect();
-        
-//         let allMessages = [];
-//         let lastId = 0;
-//         const CHUNK_SIZE = 100; 
-
-//         while (true) {
-//             const msgs = await client.getMessages(chatId, {
-//                 limit: CHUNK_SIZE,
-//                 offsetId: lastId
-//             });
-
-//             if (!msgs || msgs.length === 0) break;
-
-//             allMessages.push(...msgs);
-//             lastId = msgs[msgs.length - 1].id;
-
-//             if (allMessages.length > 5000) break; 
-//         }
-
-//         const history = allMessages.map(m => ({
-//             id: m.id,
-//             text: m.message,
-//             senderId: m.fromId?.toString(),
-//             date: m.date,
-//             out: m.out
-//         }));
-
-//         await client.disconnect();
-//         res.status(200).json({ success: true, count: history.length, history });
-//     } catch (err) {
-//         if (client) await client.disconnect();
-//         res.status(500).json({ success: false, message: err.message });
-//     }
-// });
 
 
 const getChatMessages = asyncErrorHandler(async (req, res) => {
@@ -668,15 +621,12 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         
         let entity;
         try {
-            // 1. Try resolving as is (works for usernames or active dialogues)
             entity = await client.getEntity(chatId);
         } catch (e) {
             console.log(`Fallback: Attempting BigInt resolution for ${chatId}`);
             try {
-                // 2. Try converting to BigInt (required for many Group/Channel IDs)
                 entity = await client.getEntity(BigInt(chatId));
             } catch (e2) {
-                // 3. Last resort: Fetch all dialogs to populate the session cache, then find it
                 const dialogs = await client.getDialogs({});
                 entity = dialogs.find(d => d.id.toString() === chatId.toString());
             }
@@ -685,6 +635,10 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         if (!entity) {
             throw new Error("Could not find chat. Try sending a message there first.");
         }
+
+        const dialogs = await client.getDialogs({});
+        const chatDialog = dialogs.find(d => d.id.toString() === entity.id.toString());
+        const lastSeenId = chatDialog?.dialog?.readOutboxMaxId || 0;
 
         let allMessages = [];
         let lastId = 0;
@@ -710,7 +664,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
             senderId: m.senderId ? m.senderId.toString() : (m.fromId?.userId?.toString() || "system"),
             date: m.date,
             out: m.out,
-            seen: !m.unread
+            seen: m.out ? (m.id <= lastSeenId) : !m.unread
         }));
 
         await client.disconnect();
