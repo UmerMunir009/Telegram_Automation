@@ -1,17 +1,20 @@
 const Redis = require('ioredis');
 require('dotenv').config();
 
-const redisConnection = new Redis(process.env.REDIS_URL, {
+const redisUrl = process.env.REDIS_URL;
+
+const redisConnection = new Redis(redisUrl, {
     maxRetriesPerRequest: null,
-    connectTimeout: 10000, 
-    family: 0,        
-    tls: {
+    connectTimeout: 15000, 
+    // Only apply TLS if the URL starts with 'rediss://' (Upstash style)
+    // If it's 'redis://' (Railway style), we set tls to null
+    tls: redisUrl && redisUrl.startsWith('rediss://') ? {
         rejectUnauthorized: false 
-    }
+    } : null
 });
 
 redisConnection.on('connect', () => {
-    console.log('✅ Connected to Upstash Redis');
+    console.log('✅ Redis Connection Established');
 });
 
 redisConnection.on('error', (err) => {
