@@ -86,7 +86,10 @@ const messageWorker = new Worker('telegram-message-queue', async (job) => {
 
 }, { 
     connection: redisConnection,
-    concurrency: 5 
+    concurrency: 5 ,
+    removeOnComplete: { count: 100 }, 
+    removeOnFail: { count: 500 },
+    drainDelay: 5
 });
 
 module.exports = messageWorker;

@@ -1,7 +1,7 @@
 const { Worker } = require('bullmq');
 const redisConnection = require('../../config/redis');
 const { JoinJob } = require('../../models');
-const telegramController = require('./index'); 
+const telegramController = require('./index');
 
 const joinWorker = new Worker(
     'telegram-join-queue',
@@ -48,7 +48,7 @@ const joinWorker = new Worker(
             }
 
             if (i < accounts.length - 1) {
-                const waitTime = delay || 30; 
+                const waitTime = delay || 30;
                 console.log(`⏳ Waiting ${waitTime} seconds before next account...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
             }
@@ -62,7 +62,9 @@ const joinWorker = new Worker(
     },
     {
         connection: redisConnection,
-        concurrency: 1 
+        concurrency: 1,
+        drainDelay: 5, 
+        lockDuration: 30000,
     }
 );
 
