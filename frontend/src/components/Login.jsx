@@ -16,7 +16,7 @@ const Login = ({ setTheToken }) => {
         setIsLoading(true);
 
         try {
-            const response = await axios.post(`${backendUrl}/admin-login`, { email, password });
+            const response = await axios.post(`${backendUrl}/admin-login`, { name:email, password });
 
             if (response.data.accessToken) {
                 setTheToken(response.data.accessToken);
