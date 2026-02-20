@@ -6,9 +6,9 @@ const bcrypt = require("bcrypt");
 
 const adminLogin = asyncErrorHandler(async (req, res) => {
   console.log("Admin login attempt:", req.body);
-  const { username, password } = req.body;
+  const { name, password } = req.body;
 
-  if (!username || !password) {
+  if (!name || !password) {
     return res.status(STATUS_CODES.BAD_REQUEST).json({
       statusCode: STATUS_CODES.BAD_REQUEST,
       message: "Username and password are required",
@@ -17,7 +17,7 @@ const adminLogin = asyncErrorHandler(async (req, res) => {
 
   const admin = await User.findOne({
     where: {
-      username,
+      name,
       role: "admin",
     },
   });
