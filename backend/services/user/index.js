@@ -6,18 +6,18 @@ const bcrypt = require("bcrypt");
 
 const adminLogin = asyncErrorHandler(async (req, res) => {
   console.log("Admin login attempt:", req.body);
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
-  if (!email || !password) {
+  if (!username || !password) {
     return res.status(STATUS_CODES.BAD_REQUEST).json({
       statusCode: STATUS_CODES.BAD_REQUEST,
-      message: "Email and password are required",
+      message: "Username and password are required",
     });
   }
 
   const admin = await User.findOne({
     where: {
-      email,
+      username,
       role: "admin",
     },
   });
@@ -25,7 +25,7 @@ const adminLogin = asyncErrorHandler(async (req, res) => {
   if (!admin) {
     return res.status(STATUS_CODES.UNAUTHORIZED).json({
       statusCode: STATUS_CODES.UNAUTHORIZED,
-      message: "Invalid email or password",
+      message: "Invalid username or password",
     });
   }
 
@@ -34,7 +34,7 @@ const adminLogin = asyncErrorHandler(async (req, res) => {
   if (!isMatch) {
     return res.status(STATUS_CODES.UNAUTHORIZED).json({
       statusCode: STATUS_CODES.UNAUTHORIZED,
-      message: "Invalid email or password",
+      message: "Invalid username or password",
     });
   }
 

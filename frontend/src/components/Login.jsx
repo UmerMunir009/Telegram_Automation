@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { backendUrl } from '../App';
 import { toast } from 'react-toastify';
-import { Lock, Mail, Loader2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, Loader2, Eye, EyeOff, ShieldCheck, User2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Login = ({ setTheToken }) => {
@@ -59,16 +59,15 @@ const Login = ({ setTheToken }) => {
                         
                         {/* Email Field */}
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase ml-1">Work Email</label>
+                            <label className="text-xs font-bold text-slate-400 uppercase ml-1">Username</label>
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                    <Mail className="h-5 w-5 text-slate-500 group-focus-within:text-blue-500 transition-colors" />
+                                    <User2 className="h-5 w-5 text-slate-500 group-focus-within:text-blue-500 transition-colors" />
                                 </div>
                                 <input 
-                                    type="email" 
                                     onChange={(e) => setEmail(e.target.value)} 
                                     value={email} 
-                                    placeholder="name@company.com" 
+                                    placeholder="admin" 
                                     required 
                                     className="w-full bg-slate-950/50 border border-slate-800 text-white rounded-xl py-3.5 pl-11 pr-4 outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all placeholder:text-slate-600" 
                                 />
