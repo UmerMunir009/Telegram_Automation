@@ -12,7 +12,7 @@ const messageWorker = new Worker('telegram-message-queue', async (job) => {
 
     const addLog = async (msg, type = 'info') => {
         const timestamp = new Date().toLocaleTimeString();
-        const updatedLogs = [...(dbJob.logs || []), { timestamp, msg, type }];
+        const updatedLogs = [...(dbJob.logs || []), { timestamp, msg, type }].slice(-20);
         await dbJob.update({ logs: updatedLogs });
     };
 
