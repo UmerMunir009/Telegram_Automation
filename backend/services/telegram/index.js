@@ -40,6 +40,7 @@ const loginAccount = asyncErrorHandler(async (req, res) => {
         process.env.TELEGRAM_API_HASH,
         {
             connectionRetries: 5,
+            receiveUpdates: false,
             proxy: proxyOptions,
             timeout: 30000,
             deviceModel: "Automation Core v1",
@@ -356,7 +357,7 @@ const sendSingle = asyncErrorHandler(async (req, res) => {
             new StringSession(sender.sessionString),
             parseInt(process.env.TELEGRAM_API_ID),
             process.env.TELEGRAM_API_HASH,
-            { connectionRetries: 1, proxy: proxyOptions }
+            { connectionRetries: 1,receiveUpdates: false, proxy: proxyOptions }
         );
 
         await client.connect();
@@ -566,6 +567,7 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
         process.env.TELEGRAM_API_HASH,
         {
             connectionRetries: 2,
+            receiveUpdates: false,
             proxy: user.proxy ? {
                 ip: user.proxy.host,
                 port: parseInt(user.proxy.port),
@@ -613,7 +615,7 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         new StringSession(user.sessionString),
         parseInt(process.env.TELEGRAM_API_ID),
         process.env.TELEGRAM_API_HASH,
-        { connectionRetries: 5 }
+        { connectionRetries: 5 ,receiveUpdates: false,}
     );
 
     try {
@@ -700,6 +702,7 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
         process.env.TELEGRAM_API_HASH,
         {
             connectionRetries: 5,
+            receiveUpdates: false,
             proxy: user.proxy ? {
                 ip: user.proxy.host,
                 port: parseInt(user.proxy.port),
