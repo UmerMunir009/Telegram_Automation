@@ -43,7 +43,9 @@ const messageWorker = new Worker('telegram-message-queue', async (job) => {
                 parseInt(process.env.TELEGRAM_API_ID),
                 process.env.TELEGRAM_API_HASH,
                 {
-                    connectionRetries: 1,
+                    connectionRetries: 1, 
+                    autoReconnect: false, 
+                    receiveUpdates: false, 
                     proxy: sender.proxy ? {
                         ip: sender.proxy.host,
                         port: parseInt(sender.proxy.port),
@@ -54,9 +56,23 @@ const messageWorker = new Worker('telegram-message-queue', async (job) => {
                 }
             );
 
+            client._shouldUpdate = false; 
             await client.connect();
             
-            const entity = await client.getEntity(target);
+            let entity;
+            try {
+                entity = await client.getEntity(target);
+            } catch (e) {
+                try {
+                    entity = await client.getEntity(BigInt(target));
+                } catch (e2) {
+                    const dialogs = await client.getDialogs({});
+                    entity = dialogs.find(d => d.id.toString() === target.toString());
+                }
+            }
+
+            if (!entity) throw new Error("Entity not found.");
+
             await client.sendMessage(entity, { message });
             
             await dbJob.update({ current: i + 1 });
@@ -68,10 +84,17 @@ const messageWorker = new Worker('telegram-message-queue', async (job) => {
 
             if (errorMsg.includes("FLOOD_WAIT")) errorType = "warning";
             if (errorMsg.includes("PEER_FLOOD")) errorMsg = "Account restricted (Spam limit)";
+            if (errorMsg.includes("ALLOW_PAYMENT_REQUIRED")) errorMsg = "Recipient requires Premium";
 
             await addLog(`[FAIL] ${target}: ${errorMsg}`, errorType);
         } finally {
-            if (client) await client.disconnect();
+            if (client) {
+                try {
+                    await client.disconnect();
+                    await client.destroy(); 
+                } catch (disError) {
+                }
+            }
         }
 
         if (i < targets.length - 1) {
@@ -86,9 +109,9 @@ const messageWorker = new Worker('telegram-message-queue', async (job) => {
 
 }, { 
     connection: redisConnection,
-    concurrency: 5 ,
-    removeOnComplete: { count: 100 }, 
-    removeOnFail: { count: 500 },
+    concurrency: 2,
+    removeOnComplete: { count: 50 }, 
+    removeOnFail: { count: 100 },
     drainDelay: 5
 });
 

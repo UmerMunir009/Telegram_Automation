@@ -40,16 +40,17 @@ const loginAccount = asyncErrorHandler(async (req, res) => {
         process.env.TELEGRAM_API_HASH,
         {
             connectionRetries: 5,
+             autoReconnect: false, 
             receiveUpdates: false,
             proxy: proxyOptions,
             timeout: 30000,
             deviceModel: "Automation Core v1",
-            receiveUpdates: false
         }
     );
 
     try {
         console.log(" Attempting to connect to Telegram...");
+        client._shouldUpdate = false; 
         await client.connect();
         console.log("TELEGRAM CLIENT CONNECTED");
 
@@ -357,9 +358,9 @@ const sendSingle = asyncErrorHandler(async (req, res) => {
             new StringSession(sender.sessionString),
             parseInt(process.env.TELEGRAM_API_ID),
             process.env.TELEGRAM_API_HASH,
-            { connectionRetries: 1,receiveUpdates: false, proxy: proxyOptions }
+            { connectionRetries: 1,receiveUpdates: false,autoReconnect: false, proxy: proxyOptions }
         );
-
+        client._shouldUpdate = false; 
         await client.connect();
         const entity = await client.getEntity(targetHandle);
         await client.sendMessage(entity, { message });
@@ -415,7 +416,7 @@ const internalJoinLogic = async (phone, channelUrl) => {
 
     try {
         console.log(`[${phone}] 🔄 Connecting to Telegram Network...`);
-
+        client._shouldUpdate = false;
         await client.connect();
 
         if (client._updateLoop) client._updateLoop = false;
@@ -567,6 +568,7 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
         process.env.TELEGRAM_API_HASH,
         {
             connectionRetries: 2,
+            autoReconnect: false, 
             receiveUpdates: false,
             proxy: user.proxy ? {
                 ip: user.proxy.host,
@@ -579,6 +581,7 @@ const getAccountChats = asyncErrorHandler(async (req, res) => {
     );
 
     try {
+        client._shouldUpdate = false;
         await client.connect();
 
         const dialogs = await client.getDialogs({});
@@ -615,10 +618,11 @@ const getChatMessages = asyncErrorHandler(async (req, res) => {
         new StringSession(user.sessionString),
         parseInt(process.env.TELEGRAM_API_ID),
         process.env.TELEGRAM_API_HASH,
-        { connectionRetries: 5 ,receiveUpdates: false,}
+        { connectionRetries: 5 ,receiveUpdates: false,autoReconnect: false}
     );
 
     try {
+        client._shouldUpdate = false; 
         await client.connect();
 
         let entity;
@@ -702,6 +706,7 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
         process.env.TELEGRAM_API_HASH,
         {
             connectionRetries: 5,
+            autoReconnect: false,
             receiveUpdates: false,
             proxy: user.proxy ? {
                 ip: user.proxy.host,
@@ -713,7 +718,8 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
         }
     );
 
-    try {
+    try {         
+        client._shouldUpdate = false; 
         await client.connect();
         let entity;
         try {
@@ -750,6 +756,14 @@ const sendMessage = asyncErrorHandler(async (req, res) => {
     } catch (err) {
         if (client) await client.disconnect();
         res.status(500).json({ success: false, message: err.message });
+    }
+    finally {
+        if (client) {
+            try {
+                await client.disconnect();
+                await client.destroy();
+            } catch (e) {}
+        }
     }
 });
 
